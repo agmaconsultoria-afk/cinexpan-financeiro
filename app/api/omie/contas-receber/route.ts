@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   lerCredenciais,
   listarContasReceber,
+  listarMovimentosReceber,
   amostrarContasReceber,
   amostrarMovimentos,
 } from "@/lib/rastreio/omie-client";
@@ -50,7 +51,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const resultado = await listarContasReceber(cred, { dataDe, dataAte, debug });
+    // Fonte padrão = Movimentos Financeiros (tem os valores realizados).
+    // ?fonte=contareceber força o endpoint de títulos (sem valores realizados).
+    const resultado =
+      fonte === "contareceber"
+        ? await listarContasReceber(cred, { dataDe, dataAte, debug })
+        : await listarMovimentosReceber(cred, { dataDe, dataAte, debug });
     return NextResponse.json({
       ok: true,
       emitidoEm: new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),

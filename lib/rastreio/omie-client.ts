@@ -183,6 +183,130 @@ export function omieParaContaReceber(raw: Record<string, unknown>): ContaReceber
   };
 }
 
+// ===================== Movimentos Financeiros (financas/mf) =====================
+// Fonte dos valores realizados: pago, aberto, desconto, juros, multa.
+
+/** Converte um movimento financeiro do Omie (detalhes + resumo) em ContaReceber. */
+export function omieMovimentoParaContaReceber(mov: Record<string, unknown>): ContaReceber {
+  const d = (mov.detalhes as Record<string, unknown>) ?? {};
+  const r = (mov.resumo as Record<string, unknown>) ?? {};
+  const valorConta = num(d.nValorTitulo);
+  const situacao = mapearStatusOmie((d.cStatus as string) ?? "");
+
+  return {
+    situacao,
+    numeroDoc: (d.cNumTitulo ?? "").toString(),
+    parcela: (d.cNumParcela ?? "").toString(),
+    notaFiscal: (d.cNumDocFiscal ?? "").toString(),
+    cliente: (d.cCPFCNPJCliente ?? "").toString(),
+    previsaoRecebimento: dataIso(d.dDtPrevisao),
+    ultimoRecebimento: dataIso(d.dDtPagamento),
+    valorConta,
+    valorLiquido: num(r.nValLiquido) || valorConta,
+    desconto: num(r.nDesconto),
+    jurosMulta: num(r.nJuros) + num(r.nMulta),
+    valorRecebido: num(r.nValPago),
+    valorAReceber: num(r.nValAberto),
+    categoria: (d.cCodCateg ?? "").toString(),
+    operacao: (d.cOperacao ?? "").toString(),
+    contaCorrente: (d.nCodCC ?? "").toString(),
+    vencimento: dataIso(d.dDtVenc),
+    dataEmissao: dataIso(d.dDtEmissao),
+    vendedor: "",
+    projeto: "",
+  };
+}
+
+function ehReceita(mov: Record<string, unknown>): boolean {
+  const d = (mov.detalhes as Record<string, unknown>) ?? {};
+  const nat = (d.cNatureza ?? "").toString().toUpperCase();
+  const grupo = (d.cGrupo ?? "").toString().toUpperCase();
+  return nat === "R" || grupo.includes("RECEBER");
+}
+
+/** Mapa código de categoria -> descrição (melhor esforço). */
+async function mapaCategorias(cred: OmieCredenciais): Promise<Record<string, string>> {
+  try {
+    const resp = await callOmie<{ categoria_cadastro?: Record<string, unknown>[] }>(
+      cred,
+      "geral/categorias/",
+      "ListarCategorias",
+      { pagina: 1, registros_por_pagina: 500 }
+    );
+    const mapa: Record<string, string> = {};
+    for (const c of resp.categoria_cadastro ?? []) {
+      const cod = (c.codigo ?? c.codigo_categoria ?? "").toString();
+      const desc = (c.descricao ?? "").toString();
+      if (cod) mapa[cod] = desc;
+    }
+    return mapa;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Lista os Movimentos Financeiros de RECEITA (contas a receber), paginando e
+ * filtrando por data de emissão. Esta é a fonte usada na sincronização real,
+ * pois traz os valores realizados (recebido/aberto/desconto/juros/multa).
+ */
+export async function listarMovimentosReceber(
+  cred: OmieCredenciais,
+  opcoes: { dataDe?: string; dataAte?: string; debug?: boolean; maxPaginas?: number } = {}
+): Promise<ResultadoSincOmie> {
+  const nRegPorPagina = 500;
+  const maxPaginas = opcoes.maxPaginas ?? 200;
+  const movimentos: Record<string, unknown>[] = [];
+  let pagina = 1;
+  let totalPaginas = 1;
+  let totalRegistros = 0;
+  let amostraBruta: Record<string, unknown> | undefined;
+
+  do {
+    const param: Record<string, unknown> = {
+      nPagina: pagina,
+      nRegPorPagina,
+      cOrdenarPor: "CODIGO",
+      cOrdemDecrescente: "S",
+    };
+    if (opcoes.dataDe) param.dDtEmissaoDe = opcoes.dataDe;
+    if (opcoes.dataAte) param.dDtEmissaoAte = opcoes.dataAte;
+
+    const resp = await callOmie<{
+      nTotPaginas?: number;
+      nTotRegistros?: number;
+      movimentos?: Record<string, unknown>[];
+    }>(cred, "financas/mf/", "ListarMovimentos", param);
+
+    totalPaginas = resp.nTotPaginas ?? 1;
+    totalRegistros = resp.nTotRegistros ?? 0;
+    const lote = resp.movimentos ?? [];
+    if (pagina === 1 && lote.length > 0) amostraBruta = lote[0];
+    movimentos.push(...lote);
+    pagina++;
+  } while (pagina <= totalPaginas && pagina <= maxPaginas);
+
+  const categorias = await mapaCategorias(cred);
+  const emissaoMin = brParaIso(opcoes.dataDe);
+
+  let contas = movimentos.filter(ehReceita).map((mov) => {
+    const conta = omieMovimentoParaContaReceber(mov);
+    // Enriquecer categoria com a descrição (para as regras de Valor Faturado)
+    if (categorias[conta.categoria]) conta.categoria = categorias[conta.categoria];
+    return conta;
+  });
+  if (emissaoMin) {
+    contas = contas.filter((c) => !c.dataEmissao || c.dataEmissao >= emissaoMin);
+  }
+
+  return {
+    contas,
+    totalRegistros,
+    totalPaginas,
+    amostraBruta: opcoes.debug ? amostraBruta : undefined,
+  };
+}
+
 interface ListarResponse {
   pagina?: number;
   total_de_paginas?: number;
