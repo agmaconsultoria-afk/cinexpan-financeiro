@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CinexpanLogo } from "./CinexpanLogo";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -27,14 +28,8 @@ export function Sidebar() {
 
   return (
     <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-brand-950 text-white lg:flex">
-      <div className="flex h-16 items-center gap-2 border-b border-white/10 px-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 font-bold">
-          C
-        </div>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold">Cinexpan</div>
-          <div className="text-xs text-brand-200">Portal Financeiro</div>
-        </div>
+      <div className="clay-band flex h-20 items-center border-b border-white/10 px-6">
+        <CinexpanLogo tamanho="md" />
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">

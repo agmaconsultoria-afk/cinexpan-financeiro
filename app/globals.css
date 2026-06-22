@@ -12,7 +12,8 @@ body {
 }
 
 body {
-  @apply bg-slate-100 text-slate-800 antialiased;
+  @apply text-slate-800 antialiased;
+  background-color: #f6f1ea;
 }
 
 @layer components {
@@ -22,6 +23,37 @@ body {
   .card-pad {
     @apply p-5;
   }
+
+  /* Logotipo Cinexpan: branco, itálico, sublinhado */
+  .logo-cinexpan {
+    @apply font-extrabold italic tracking-tight text-white;
+    border-bottom: 2px solid currentColor;
+    line-height: 1.05;
+  }
+  .logo-sub {
+    letter-spacing: 0.32em;
+  }
+
+  /* Bolinha de argila (esfera 3D em CSS) */
+  .clay-ball {
+    border-radius: 9999px;
+    background: radial-gradient(circle at 32% 28%, #d9a06a 0%, #b06a3a 42%, #7a4527 100%);
+    box-shadow:
+      inset -2px -3px 5px rgba(60, 28, 12, 0.55),
+      inset 2px 2px 4px rgba(255, 224, 188, 0.35);
+  }
+}
+
+/* Faixa decorativa de bolinhas de argila (cabeçalho da sidebar) */
+.clay-band {
+  background:
+    radial-gradient(circle at 12% 30%, #c98b5a 0 9px, transparent 10px),
+    radial-gradient(circle at 30% 70%, #a85a2f 0 11px, transparent 12px),
+    radial-gradient(circle at 48% 25%, #b87a45 0 8px, transparent 9px),
+    radial-gradient(circle at 66% 65%, #8a4628 0 12px, transparent 13px),
+    radial-gradient(circle at 84% 35%, #c98b5a 0 9px, transparent 10px),
+    radial-gradient(circle at 95% 75%, #a85a2f 0 7px, transparent 8px);
+  background-color: #321810;
 }
 
 /* Estilos de impressão para relatórios */

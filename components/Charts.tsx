@@ -22,16 +22,16 @@ import { formatarMoeda, formatarMoedaCompacta } from "@/lib/format";
 import { CategoriaTotal } from "@/lib/aggregations";
 
 const CORES_GRAFICO = [
-  "#326bff",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#06b6d4",
-  "#ec4899",
-  "#84cc16",
-  "#f97316",
-  "#64748b",
+  "#a85a2f",
+  "#cd8a55",
+  "#7a4527",
+  "#d9a06a",
+  "#8a4628",
+  "#c2703a",
+  "#b87a45",
+  "#e0b487",
+  "#6f3925",
+  "#a3835f",
 ];
 
 function tooltipMoeda(value: number) {
@@ -59,7 +59,7 @@ export function ReceitaDespesaChart({ dados }: { dados: PontoFluxoCaixa[] }) {
           type="monotone"
           dataKey="resultado"
           name="Resultado"
-          stroke="#326bff"
+          stroke="#a85a2f"
           strokeWidth={2.5}
           dot={{ r: 3 }}
         />
@@ -75,8 +75,8 @@ export function SaldoAcumuladoChart({ dados }: { dados: PontoFluxoCaixa[] }) {
       <AreaChart data={dados} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="grad-saldo" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#326bff" stopOpacity={0.35} />
-            <stop offset="95%" stopColor="#326bff" stopOpacity={0} />
+            <stop offset="5%" stopColor="#a85a2f" stopOpacity={0.35} />
+            <stop offset="95%" stopColor="#a85a2f" stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -92,7 +92,7 @@ export function SaldoAcumuladoChart({ dados }: { dados: PontoFluxoCaixa[] }) {
           type="monotone"
           dataKey="saldoAcumulado"
           name="Saldo acumulado"
-          stroke="#326bff"
+          stroke="#a85a2f"
           strokeWidth={2.5}
           fill="url(#grad-saldo)"
         />
