@@ -3,6 +3,7 @@ import {
   lerCredenciais,
   listarContasReceber,
   amostrarContasReceber,
+  amostrarMovimentos,
 } from "@/lib/rastreio/omie-client";
 
 // Sempre dinâmico (lê credenciais e chama API externa em tempo de requisição).
@@ -34,11 +35,14 @@ export async function GET(req: NextRequest) {
   const dataAte = searchParams.get("ate") ?? undefined;
   const debug = searchParams.get("debug") === "1";
 
+  const fonte = searchParams.get("fonte"); // "mf" para Movimentos Financeiros
+
   // Modo debug: resposta enxuta com o registro bruto para conferir o mapeamento.
   if (debug) {
     try {
-      const amostra = await amostrarContasReceber(cred);
-      return NextResponse.json({ ok: true, debug: true, ...amostra });
+      const amostra =
+        fonte === "mf" ? await amostrarMovimentos(cred) : await amostrarContasReceber(cred);
+      return NextResponse.json({ ok: true, debug: true, fonte: fonte ?? "contareceber", ...amostra });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Erro ao consultar o Omie.";
       return NextResponse.json({ ok: false, erro: msg }, { status: 502 });

@@ -199,8 +199,37 @@ export interface ResultadoSincOmie {
 }
 
 /**
- * Busca rápida de UMA página pequena, devolvendo o primeiro registro BRUTO do
- * Omie e a lista de campos — para conferência do mapeamento (modo debug).
+ * Amostra crua do endpoint de Movimentos Financeiros (financas/mf).
+ * É aqui que ficam os valores realizados: pago, aberto, desconto, juros, multa.
+ */
+export async function amostrarMovimentos(cred: OmieCredenciais): Promise<{
+  totalRegistros: number;
+  totalPaginas: number;
+  camposDetalhes: string[];
+  camposResumo: string[];
+  amostraBruta?: Record<string, unknown>;
+}> {
+  const resp = await callOmie<Record<string, unknown>>(cred, "financas/mf/", "ListarMovimentos", {
+    nPagina: 1,
+    nRegPorPagina: 3,
+    cExibirDesativados: "N",
+  });
+  const movimentos = (resp.movimentos as Record<string, unknown>[]) ?? [];
+  const primeiro = movimentos[0];
+  const detalhes = (primeiro?.detalhes as Record<string, unknown>) ?? {};
+  const resumo = (primeiro?.resumo as Record<string, unknown>) ?? {};
+  return {
+    totalRegistros: (resp.nTotRegistros as number) ?? 0,
+    totalPaginas: (resp.nTotPaginas as number) ?? 0,
+    camposDetalhes: Object.keys(detalhes),
+    camposResumo: Object.keys(resumo),
+    amostraBruta: primeiro,
+  };
+}
+
+/**
+ * Amostra rápida de UMA página pequena de Contas a Receber, devolvendo o
+ * primeiro registro BRUTO do Omie e a lista de campos — modo debug.
  */
 export async function amostrarContasReceber(cred: OmieCredenciais): Promise<{
   totalRegistros: number;
