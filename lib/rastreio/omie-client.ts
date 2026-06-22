@@ -212,7 +212,6 @@ export async function amostrarMovimentos(cred: OmieCredenciais): Promise<{
   const resp = await callOmie<Record<string, unknown>>(cred, "financas/mf/", "ListarMovimentos", {
     nPagina: 1,
     nRegPorPagina: 3,
-    cExibirDesativados: "N",
   });
   const movimentos = (resp.movimentos as Record<string, unknown>[]) ?? [];
   const primeiro = movimentos[0];
