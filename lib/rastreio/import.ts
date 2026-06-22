@@ -155,6 +155,16 @@ export function importarBD(buffer: ArrayBuffer): ResultadoImportacaoBD {
       ignoradas++;
       continue;
     }
+    // Ignora linhas de rodapé/somatório ("Total"/"Totais") sem documento real.
+    const sitNorm = normalizar(situacao);
+    if (
+      (sitNorm === "total" || sitNorm === "totais") &&
+      !txt("numeroDoc") &&
+      !txt("notaFiscal")
+    ) {
+      ignoradas++;
+      continue;
+    }
 
     contas.push({
       situacao,
