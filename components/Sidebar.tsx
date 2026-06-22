@@ -9,10 +9,12 @@ import {
   FileText,
   Upload,
   Plug,
+  Radar,
 } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/rastreio-faturamento", label: "Rastreio de Faturamento", icon: Radar },
   { href: "/fluxo-caixa", label: "Fluxo de Caixa", icon: TrendingUp },
   { href: "/dre", label: "DRE", icon: FileSpreadsheet },
   { href: "/relatorios", label: "Relatórios", icon: FileText },

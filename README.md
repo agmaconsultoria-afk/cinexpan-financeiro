@@ -17,6 +17,7 @@ empresa — com estrutura preparada para integração futura com o **ERP Omie**.
 
 | Módulo | Descrição |
 | --- | --- |
+| **Rastreio de Faturamento** | Cruza o faturamento (competência) com o financeiro (contas a receber em parcelas) para acompanhar, mês a mês, quanto de cada faturamento já foi recebido, ainda falta, foi descontado, multas/juros e atrasos — com o % rastreado do mês. Importa o relatório de Contas a Receber do Omie. |
 | **Dashboard Executivo** | KPIs (receita, despesa, resultado, margem), gráficos de receitas x despesas, composição de despesas e saldo de caixa acumulado. |
 | **Fluxo de Caixa** | Série mensal de entradas/saídas, resultado e saldo acumulado, com detalhamento em tabela. |
 | **DRE** | Demonstração do Resultado estruturada (Receita Bruta → Resultado Líquido) com % sobre receita e totais por categoria. |
@@ -60,13 +61,35 @@ Baixe a planilha modelo direto na tela *Importar Planilha*.
 ## Estrutura do projeto
 
 ```
-app/                 # rotas (App Router)
-  page.tsx           # Dashboard
-  fluxo-caixa/       # Fluxo de caixa
-  dre/               # DRE
-  relatorios/        # Relatórios e exportação
-  importar/          # Importação de planilha
-  integracao-omie/   # Integração Omie (roadmap)
-components/          # Sidebar, Topbar, KPI cards, gráficos, UI
-lib/                 # tipos, agregações, formatação, import/export, contexto de dados, omie
+app/                    # rotas (App Router)
+  page.tsx              # Dashboard
+  rastreio-faturamento/ # Rastreio de Faturamento
+  fluxo-caixa/          # Fluxo de caixa
+  dre/                  # DRE
+  relatorios/           # Relatórios e exportação
+  importar/             # Importação de planilha (genérica)
+  integracao-omie/      # Integração Omie (roadmap)
+components/             # Sidebar, Topbar, KPI cards, gráficos, UI
+lib/                    # tipos, agregações, formatação, import/export, contexto, omie
+  rastreio/             # módulo Rastreio de Faturamento (regras da planilha-mãe)
+    logic.ts            #   colunas calculadas + Demonstrativo Mensal
+    import.ts           #   leitura do BD (Contas a Receber)
+    faturamento.ts      #   faturamento mensal lançado
+    context.tsx         #   estado/persistência do módulo
 ```
+
+## Rastreio de Faturamento — regras
+
+O módulo replica fielmente a planilha "Rastreio do Faturamento":
+
+- **Competência** = mês da Data de Emissão da nota.
+- **Mês de Recebimento** = mês do Último Recebimento (ou da Previsão, se não houver).
+- **Valor Faturado** desconsidera lançamentos cancelados, bloqueados a vencer,
+  devoluções e adiantamentos de cliente.
+- **Atrasado** = valor de parcelas com situação "Atrasado".
+- **Visão Recebimento** usa Valor a Receber / Mês de Recebimento; **Visão
+  Vencimento** usa Valor Faturado / Mês de Vencimento.
+- **% Rastreado** = (A receber + Recebido + Descontos + Vendas PF) ÷ Faturamento do mês.
+
+As regras foram validadas contra a planilha original (fev/2026): mesmo resultado
+exato (Já Recebido R$ 4.336.381,68; Total Rastreado R$ 4.596.624,47; **96,43%**).

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { DataProvider } from "@/lib/data-context";
+import { RastreioProvider } from "@/lib/rastreio/context";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 
@@ -19,6 +20,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className={`${inter.variable} font-sans`}>
         <DataProvider>
+          <RastreioProvider>
           <div className="flex min-h-screen">
             <Sidebar />
             <div className="flex flex-1 flex-col lg:pl-64">
@@ -26,6 +28,7 @@ export default function RootLayout({
               <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
             </div>
           </div>
+          </RastreioProvider>
         </DataProvider>
       </body>
     </html>
