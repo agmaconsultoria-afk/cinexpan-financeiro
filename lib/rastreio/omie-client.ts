@@ -199,6 +199,30 @@ export interface ResultadoSincOmie {
 }
 
 /**
+ * Busca rápida de UMA página pequena, devolvendo o primeiro registro BRUTO do
+ * Omie e a lista de campos — para conferência do mapeamento (modo debug).
+ */
+export async function amostrarContasReceber(cred: OmieCredenciais): Promise<{
+  totalRegistros: number;
+  totalPaginas: number;
+  campos: string[];
+  amostraBruta?: Record<string, unknown>;
+}> {
+  const resp = await callOmie<ListarResponse>(cred, "financas/contareceber/", "ListarContasReceber", {
+    pagina: 1,
+    registros_por_pagina: 3,
+    apenas_importado_api: "N",
+  });
+  const amostraBruta = (resp.conta_receber_cadastro ?? [])[0];
+  return {
+    totalRegistros: resp.total_de_registros ?? 0,
+    totalPaginas: resp.total_de_paginas ?? 0,
+    campos: amostraBruta ? Object.keys(amostraBruta) : [],
+    amostraBruta,
+  };
+}
+
+/**
  * Lista todas as contas a receber (paginando), opcionalmente filtrando por
  * intervalo de datas (dd/mm/aaaa). Se `debug` for true, inclui o primeiro
  * registro bruto retornado pelo Omie para conferência de mapeamento.

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { lerCredenciais, listarContasReceber } from "@/lib/rastreio/omie-client";
+import {
+  lerCredenciais,
+  listarContasReceber,
+  amostrarContasReceber,
+} from "@/lib/rastreio/omie-client";
 
 // Sempre dinâmico (lê credenciais e chama API externa em tempo de requisição).
 export const dynamic = "force-dynamic";
@@ -28,6 +32,17 @@ export async function GET(req: NextRequest) {
   const dataDe = searchParams.get("de") ?? undefined;
   const dataAte = searchParams.get("ate") ?? undefined;
   const debug = searchParams.get("debug") === "1";
+
+  // Modo debug: resposta enxuta com o registro bruto para conferir o mapeamento.
+  if (debug) {
+    try {
+      const amostra = await amostrarContasReceber(cred);
+      return NextResponse.json({ ok: true, debug: true, ...amostra });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Erro ao consultar o Omie.";
+      return NextResponse.json({ ok: false, erro: msg }, { status: 502 });
+    }
+  }
 
   try {
     const resultado = await listarContasReceber(cred, { dataDe, dataAte, debug });
