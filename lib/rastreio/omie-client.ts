@@ -29,12 +29,19 @@ interface OmieErro {
   faultcode?: string;
 }
 
-/** Executa uma chamada JSON-RPC genérica ao Omie. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Executa uma chamada JSON-RPC genérica ao Omie.
+ * Trata o bloqueio "Consumo redundante" (proteção anti-duplicação do Omie):
+ * espera o tempo indicado e tenta novamente automaticamente.
+ */
 export async function callOmie<T = unknown>(
   cred: OmieCredenciais,
   recurso: string,
   call: string,
-  param: Record<string, unknown>
+  param: Record<string, unknown>,
+  tentativasRestantes = 2
 ): Promise<T> {
   const resp = await fetch(`${OMIE_BASE}/${recurso}`, {
     method: "POST",
@@ -45,7 +52,6 @@ export async function callOmie<T = unknown>(
       app_secret: cred.appSecret,
       param: [param],
     }),
-    // o Omie costuma responder em poucos segundos; sem cache
     cache: "no-store",
   });
 
@@ -59,7 +65,15 @@ export async function callOmie<T = unknown>(
 
   const erro = json as OmieErro;
   if (erro.faultstring) {
-    throw new Error(`Omie: ${erro.faultstring}`);
+    const fs = erro.faultstring;
+    // Bloqueio temporário por consumo redundante/excessivo -> aguarda e repete.
+    if (/redundante|consumo/i.test(fs) && tentativasRestantes > 0) {
+      const m = fs.match(/(\d+)\s*segundo/i);
+      const espera = Math.min((m ? parseInt(m[1], 10) : 20) + 2, 70);
+      await sleep(espera * 1000);
+      return callOmie<T>(cred, recurso, call, param, tentativasRestantes - 1);
+    }
+    throw new Error(`Omie: ${fs}`);
   }
   if (!resp.ok) {
     throw new Error(`Omie respondeu HTTP ${resp.status}`);
@@ -284,6 +298,7 @@ export async function listarMovimentosReceber(
     if (pagina === 1 && lote.length > 0) amostraBruta = lote[0];
     movimentos.push(...lote);
     pagina++;
+    if (pagina <= totalPaginas && pagina <= maxPaginas) await sleep(300);
   } while (pagina <= totalPaginas && pagina <= maxPaginas);
 
   const categorias = await mapaCategorias(cred);
