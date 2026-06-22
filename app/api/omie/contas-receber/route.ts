@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  const dataDe = searchParams.get("de") ?? undefined;
+  // Filtro padrão: a partir de 01/01/2025 (evita puxar todo o histórico).
+  const dataDe = searchParams.get("de") ?? "01/01/2025";
   const dataAte = searchParams.get("ate") ?? undefined;
   const debug = searchParams.get("debug") === "1";
 

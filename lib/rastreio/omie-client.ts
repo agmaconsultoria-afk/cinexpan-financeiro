@@ -227,12 +227,19 @@ export async function amostrarContasReceber(cred: OmieCredenciais): Promise<{
  * intervalo de datas (dd/mm/aaaa). Se `debug` for true, inclui o primeiro
  * registro bruto retornado pelo Omie para conferência de mapeamento.
  */
+/** "01/01/2025" -> "2025-01-01" (para comparação de competência). */
+function brParaIso(s: string | undefined): string | null {
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : null;
+}
+
 export async function listarContasReceber(
   cred: OmieCredenciais,
   opcoes: { dataDe?: string; dataAte?: string; debug?: boolean; maxPaginas?: number } = {}
 ): Promise<ResultadoSincOmie> {
   const registrosPorPagina = 500;
-  const maxPaginas = opcoes.maxPaginas ?? 50;
+  const maxPaginas = opcoes.maxPaginas ?? 60;
   const todas: Record<string, unknown>[] = [];
   let pagina = 1;
   let totalPaginas = 1;
@@ -244,6 +251,9 @@ export async function listarContasReceber(
       pagina,
       registros_por_pagina: registrosPorPagina,
       apenas_importado_api: "N",
+      // Traz os mais recentes primeiro (reduz risco de cortar no limite de páginas)
+      ordenar_por: "CODIGO",
+      ordem_decrescente: "S",
     };
     if (opcoes.dataDe) param.filtrar_por_data_de = opcoes.dataDe;
     if (opcoes.dataAte) param.filtrar_por_data_ate = opcoes.dataAte;
@@ -263,7 +273,13 @@ export async function listarContasReceber(
     pagina++;
   } while (pagina <= totalPaginas && pagina <= maxPaginas);
 
-  const contas = todas.map(omieParaContaReceber);
+  // Trava por competência (data de emissão): só de `dataDe` em diante.
+  const emissaoMin = brParaIso(opcoes.dataDe);
+  let contas = todas.map(omieParaContaReceber);
+  if (emissaoMin) {
+    contas = contas.filter((c) => !c.dataEmissao || c.dataEmissao >= emissaoMin);
+  }
+
   return {
     contas,
     totalRegistros,
