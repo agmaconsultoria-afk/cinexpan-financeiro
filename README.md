@@ -39,10 +39,26 @@ npm start        # servir o build
 1. **Versão atual:** o portal inicia com **dados de exemplo**. Em *Importar Planilha*,
    o usuário carrega a planilha real — os dados ficam salvos no navegador
    (localStorage) e passam a alimentar todas as telas.
-2. **Próxima fase:** a integração com o **Omie** substituirá a importação manual,
-   sincronizando contas a pagar/receber e movimentos diretamente do ERP. As
-   credenciais (`app_key`/`app_secret`) ficarão protegidas no servidor — ver
-   `lib/omie.ts`.
+2. **Integração Omie (Rastreio):** com as credenciais configuradas, o botão
+   **Sincronizar Omie** consulta `financas/contareceber/ListarContasReceber`
+   (paginado) e atualiza o Rastreio sem upload manual.
+
+### Configurar o Omie
+
+1. Copie `.env.example` para `.env.local` e preencha:
+   ```
+   OMIE_APP_KEY=...
+   OMIE_APP_SECRET=...
+   ```
+2. Reinicie o servidor (`npm run dev`).
+3. Em **Integração Omie**, clique em **Testar conexão**; depois use
+   **Sincronizar Omie** na tela de Rastreio.
+
+As credenciais são lidas apenas no servidor (rota `app/api/omie/contas-receber`)
+e nunca expostas ao navegador. Cliente Omie em `lib/rastreio/omie-client.ts`.
+
+> Endpoint de debug: `/api/omie/contas-receber?debug=1` retorna um registro
+> bruto do Omie, útil para conferir o mapeamento exato dos campos.
 
 ## Formato da planilha
 

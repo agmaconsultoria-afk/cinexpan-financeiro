@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Pencil,
   Check,
+  Cloud,
 } from "lucide-react";
 import { useRastreio } from "@/lib/rastreio/context";
 import { montarDemonstrativo, rotuloMesAno } from "@/lib/rastreio/logic";
@@ -89,6 +90,7 @@ export default function RastreioFaturamentoPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
 
   const pf = vendasPF[competencia] ?? 0;
   const dem = useMemo(
@@ -122,6 +124,29 @@ export default function RastreioFaturamentoPage() {
     }
   }
 
+  async function sincronizarOmie() {
+    setSincronizando(true);
+    setAviso(null);
+    try {
+      const resp = await fetch("/api/omie/contas-receber");
+      const dados = await resp.json();
+      if (!dados.ok) {
+        setAviso(dados.erro ?? "Não foi possível sincronizar com o Omie.");
+      } else if (!dados.contas?.length) {
+        setAviso("O Omie respondeu, mas nenhuma conta a receber foi retornada no período.");
+      } else {
+        importarContas(dados.contas, dados.emitidoEm ?? null);
+        setAviso(
+          `${dados.contas.length} contas sincronizadas do Omie (${dados.totalRegistros} registros).`
+        );
+      }
+    } catch {
+      setAviso("Falha de conexão ao sincronizar com o Omie.");
+    } finally {
+      setSincronizando(false);
+    }
+  }
+
   if (!carregado) {
     return <div className="text-slate-500">Carregando…</div>;
   }
@@ -148,9 +173,17 @@ export default function RastreioFaturamentoPage() {
               }}
             />
             <button
+              onClick={sincronizarOmie}
+              disabled={sincronizando}
+              className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+            >
+              <Cloud className={`h-4 w-4 ${sincronizando ? "animate-pulse" : ""}`} />
+              {sincronizando ? "Sincronizando…" : "Sincronizar Omie"}
+            </button>
+            <button
               onClick={() => inputRef.current?.click()}
               disabled={importando}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               <RefreshCw className={`h-4 w-4 ${importando ? "animate-spin" : ""}`} />
               Atualizar BD
