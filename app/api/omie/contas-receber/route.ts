@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
 
     // Grava a competência na base (histórico) — não re-sincronizar o passado.
     if (competencia && fonte !== "mf" && resultado.contas.length > 0) {
-      salvarCompetencia(competencia, resultado.contas, emitidoEm);
+      await salvarCompetencia(competencia, resultado.contas, emitidoEm);
     }
 
     return NextResponse.json({

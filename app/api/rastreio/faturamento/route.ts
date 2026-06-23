@@ -15,8 +15,8 @@ export async function POST(req: NextRequest) {
     if (!/^\d{4}-\d{2}$/.test(mes)) {
       return NextResponse.json({ ok: false, erro: "Mês inválido." }, { status: 400 });
     }
-    if (typeof body.faturamento === "number") setFaturamento(mes, body.faturamento);
-    if (typeof body.vendasPF === "number") setVendasPF(mes, body.vendasPF);
+    if (typeof body.faturamento === "number") await setFaturamento(mes, body.faturamento);
+    if (typeof body.vendasPF === "number") await setVendasPF(mes, body.vendasPF);
     return NextResponse.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro ao gravar.";

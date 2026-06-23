@@ -392,7 +392,7 @@ export async function resolverClientes(
   _cred: OmieCredenciais,
   contas: ContaReceber[]
 ): Promise<number> {
-  const { map: cache } = getClientes();
+  const { map: cache } = await getClientes();
   let resolvidos = 0;
   for (const c of contas) {
     if (c.cliente) {
@@ -420,7 +420,7 @@ export async function atualizarCacheClientes(
   cred: OmieCredenciais
 ): Promise<{ total: number }> {
   const mapa = await mapaClientes(cred, 600);
-  if (Object.keys(mapa).length > 0) mergeClientes(mapa);
+  if (Object.keys(mapa).length > 0) await mergeClientes(mapa);
   return { total: Object.keys(mapa).length };
 }
 

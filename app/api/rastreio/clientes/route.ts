@@ -7,7 +7,8 @@ export const maxDuration = 300;
 
 /** GET /api/rastreio/clientes — diagnóstico do cache de clientes. */
 export async function GET() {
-  return NextResponse.json({ ok: true, ...diagnosticoClientes() });
+  const diag = await diagnosticoClientes();
+  return NextResponse.json({ ok: true, ...diag });
 }
 
 /**
@@ -24,7 +25,7 @@ export async function POST() {
   }
   try {
     const { total } = await atualizarCacheClientes(cred);
-    const atualizados = reaplicarNomesClientes();
+    const atualizados = await reaplicarNomesClientes();
     return NextResponse.json({ ok: true, total, atualizados });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro ao atualizar clientes.";

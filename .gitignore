@@ -27,5 +27,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# base de dados local do Rastreio
+# base de dados local do Rastreio (formato antigo, pré-PostgreSQL)
 /data
+
+# instalador / runtime no servidor
+/logs
+/install/nssm.exe

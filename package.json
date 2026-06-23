@@ -15,10 +15,12 @@
     "react-dom": "^18.3.1",
     "recharts": "^2.12.7",
     "xlsx": "^0.18.5",
-    "lucide-react": "^0.408.0"
+    "lucide-react": "^0.408.0",
+    "pg": "^8.12.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
+    "@types/pg": "^8.11.6",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
