@@ -143,12 +143,14 @@ export default function RastreioFaturamentoPage() {
       } else {
         importarContas(dados.contas, dados.emitidoEm ?? null);
         setCompetencia(mesOmie); // mostra a competência recém-sincronizada
-        const comps = dados.competencias ?? [];
-        const faixa = comps.length ? `${comps[0]} a ${comps[comps.length - 1]}` : "—";
+        const enr =
+          dados.enriquecidos != null
+            ? ` · cruzados c/ MF: ${dados.enriquecidos}` +
+              (dados.truncadoMF ? " (parcial — avise para ampliar)" : "")
+            : "";
         setAviso(
-          `${dados.contas.length} contas sincronizadas do Omie · filtro: ${dados.filtroUsado} · ` +
-            `páginas ${dados.paginasLidas}/${dados.totalPaginas} · competências: ${faixa}` +
-            (dados.truncado ? " · (limite de páginas atingido — avise para ampliar)" : "")
+          `${dados.contas.length} contas sincronizadas do Omie · ` +
+            `páginas ${dados.paginasLidas}/${dados.totalPaginas}${enr}`
         );
       }
     } catch {

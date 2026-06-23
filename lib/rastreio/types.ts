@@ -33,6 +33,7 @@ export interface ContaReceber {
   dataEmissao: string | null;
   vendedor: string;
   projeto: string;
+  codigoOmie?: string; // código do lançamento no Omie (para cruzar com Movimentos)
 }
 
 /** Conta a receber com as colunas calculadas da planilha-mãe. */

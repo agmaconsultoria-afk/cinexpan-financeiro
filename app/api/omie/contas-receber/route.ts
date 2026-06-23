@@ -41,6 +41,8 @@ export async function GET(req: NextRequest) {
   let dataAte: string | undefined;
   let emissaoMin: string | undefined;
   let emissaoMax: string | undefined;
+  let pagtoDe: string | undefined;
+  let pagtoAte: string | undefined;
   const p2 = (n: number) => String(n).padStart(2, "0");
   if (competencia && /^\d{4}-\d{2}$/.test(competencia)) {
     const [y, m] = competencia.split("-").map(Number);
@@ -50,6 +52,10 @@ export async function GET(req: NextRequest) {
     dataAte = `${p2(proxMesUlt.getUTCDate())}/${p2(proxMesUlt.getUTCMonth() + 1)}/${proxMesUlt.getUTCFullYear()}`;
     emissaoMin = `${y}-${p2(m)}-01`;
     emissaoMax = `${y}-${p2(m)}-${p2(ultimoDia)}`;
+    // Janela de pagamento p/ cruzamento com MF: do início da competência até hoje.
+    const hoje = new Date();
+    pagtoDe = `01/${p2(m)}/${y}`;
+    pagtoAte = `${p2(hoje.getDate())}/${p2(hoje.getMonth() + 1)}/${hoje.getFullYear()}`;
   } else {
     dataDe = searchParams.get("de") ?? "01/01/2025";
     dataAte = searchParams.get("ate") ?? undefined;
@@ -73,7 +79,17 @@ export async function GET(req: NextRequest) {
     const resultado =
       fonte === "mf"
         ? await listarMovimentosReceber(cred, { dataDe, dataAte, debug })
-        : await listarContasReceber(cred, { dataDe, dataAte, emissaoMin, emissaoMax, debug, maxPaginas: 120 });
+        : await listarContasReceber(cred, {
+            dataDe,
+            dataAte,
+            emissaoMin,
+            emissaoMax,
+            debug,
+            maxPaginas: 120,
+            enriquecerMF: Boolean(competencia),
+            pagtoDe,
+            pagtoAte,
+          });
     return NextResponse.json({
       ok: true,
       emitidoEm: new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),
@@ -83,6 +99,9 @@ export async function GET(req: NextRequest) {
       paginasLidas: resultado.paginasLidas,
       competencias: resultado.competencias,
       truncado: resultado.truncado,
+      enriquecidos: resultado.enriquecidos,
+      paginasMF: resultado.paginasMF,
+      truncadoMF: resultado.truncadoMF,
       contas: resultado.contas,
       ...(debug ? { amostraBruta: resultado.amostraBruta } : {}),
     });

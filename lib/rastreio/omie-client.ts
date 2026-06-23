@@ -195,6 +195,7 @@ export function omieParaContaReceber(raw: Record<string, unknown>): ContaReceber
     dataEmissao: dataIso(pega(r, "data_emissao", "dDtEmissao", "data_registro", "dDtRegistro")),
     vendedor: (pega(r, "vendedor", "cNomeVendedor") ?? "").toString(),
     projeto: (pega(r, "projeto", "cNomeProjeto") ?? "").toString(),
+    codigoOmie: (pega(r, "codigo_lancamento_omie", "nCodTitulo") ?? "").toString(),
   };
 }
 
@@ -258,6 +259,78 @@ async function mapaCategorias(cred: OmieCredenciais): Promise<Record<string, str
   } catch {
     return {};
   }
+}
+
+/**
+ * Cruza os títulos (de ListarContasReceber) com as baixas dos Movimentos
+ * Financeiros para preencher os valores realizados (recebido líquido, desconto,
+ * juros, multa, valor em aberto, data do recebimento). Casa por código do
+ * lançamento (nCodTitulo) e, como fallback, por NF + parcela.
+ *
+ * `pagtoDe`/`pagtoAte` em dd/mm/aaaa (filtro dDtPagtoDe — único aceito pelo MF).
+ */
+async function enriquecerComMF(
+  cred: OmieCredenciais,
+  contas: ContaReceber[],
+  pagtoDe: string,
+  pagtoAte: string | undefined,
+  maxPaginas = 80
+): Promise<{ enriquecidos: number; paginasMF: number; truncadoMF: boolean }> {
+  const porCodigo = new Map<string, ContaReceber>();
+  const porDocParc = new Map<string, ContaReceber>();
+  for (const c of contas) {
+    if (c.codigoOmie) porCodigo.set(c.codigoOmie, c);
+    if (c.notaFiscal && c.parcela) porDocParc.set(`${c.notaFiscal}|${c.parcela}`, c);
+  }
+
+  let enriquecidos = 0;
+  let pagina = 1;
+  let totalPaginas = 1;
+  let truncadoMF = false;
+
+  do {
+    const param: Record<string, unknown> = {
+      nPagina: pagina,
+      nRegPorPagina: 500,
+      dDtPagtoDe: pagtoDe,
+    };
+    if (pagtoAte) param.dDtPagtoAte = pagtoAte;
+
+    const resp = await callOmie<{
+      nTotPaginas?: number;
+      movimentos?: Record<string, unknown>[];
+    }>(cred, "financas/mf/", "ListarMovimentos", param);
+
+    totalPaginas = resp.nTotPaginas ?? 1;
+    for (const mov of resp.movimentos ?? []) {
+      if (!ehReceita(mov)) continue;
+      const d = (mov.detalhes as Record<string, unknown>) ?? {};
+      const r = (mov.resumo as Record<string, unknown>) ?? {};
+      const cod = (d.nCodTitulo ?? "").toString();
+      const dk = `${(d.cNumDocFiscal ?? "").toString()}|${(d.cNumParcela ?? "").toString()}`;
+      const alvo = porCodigo.get(cod) ?? porDocParc.get(dk);
+      if (!alvo) continue;
+
+      const pago = num(r.nValPago);
+      alvo.valorRecebido = pago;
+      alvo.desconto = num(r.nDesconto);
+      alvo.jurosMulta = num(r.nJuros) + num(r.nMulta);
+      alvo.valorAReceber =
+        r.nValAberto != null ? num(r.nValAberto) : Math.max(0, alvo.valorConta - pago);
+      const ur = dataIso(d.dDtPagamento);
+      if (ur) alvo.ultimoRecebimento = ur;
+      enriquecidos++;
+    }
+
+    if (pagina >= maxPaginas && pagina < totalPaginas) {
+      truncadoMF = true;
+      break;
+    }
+    pagina++;
+    if (pagina <= totalPaginas) await sleep(200);
+  } while (pagina <= totalPaginas);
+
+  return { enriquecidos, paginasMF: pagina > totalPaginas ? totalPaginas : pagina, truncadoMF };
 }
 
 // Nomes candidatos para o filtro de data do mfListarRequest (descobertos em
@@ -411,6 +484,10 @@ export interface ResultadoSincOmie {
   paginasLidas?: number;
   competencias?: string[];
   truncado?: boolean;
+  // Diagnóstico do cruzamento com Movimentos Financeiros
+  enriquecidos?: number;
+  paginasMF?: number;
+  truncadoMF?: boolean;
 }
 
 /**
@@ -486,6 +563,10 @@ export async function listarContasReceber(
     emissaoMax?: string; // ISO YYYY-MM-DD (trava de competência final)
     debug?: boolean;
     maxPaginas?: number;
+    // Cruzamento com Movimentos Financeiros (desconto/juros/recebido líquido)
+    enriquecerMF?: boolean;
+    pagtoDe?: string; // dd/mm/aaaa
+    pagtoAte?: string; // dd/mm/aaaa
   } = {}
 ): Promise<ResultadoSincOmie> {
   const registrosPorPagina = 500;
@@ -542,6 +623,12 @@ export async function listarContasReceber(
     return true;
   });
 
+  // Cruzamento opcional com Movimentos Financeiros (valores realizados).
+  let enriquecimento: { enriquecidos: number; paginasMF: number; truncadoMF: boolean } | undefined;
+  if (opcoes.enriquecerMF && opcoes.pagtoDe && contas.length > 0) {
+    enriquecimento = await enriquecerComMF(cred, contas, opcoes.pagtoDe, opcoes.pagtoAte);
+  }
+
   const competencias = Array.from(
     new Set(contas.map((c) => mesDe(c.dataEmissao)).filter(Boolean))
   ).sort();
@@ -555,5 +642,8 @@ export async function listarContasReceber(
     paginasLidas: pagina > totalPaginas ? totalPaginas : pagina,
     competencias,
     truncado,
+    enriquecidos: enriquecimento?.enriquecidos,
+    paginasMF: enriquecimento?.paginasMF,
+    truncadoMF: enriquecimento?.truncadoMF,
   };
 }
