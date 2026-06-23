@@ -507,7 +507,8 @@ export default function RastreioFaturamentoPage() {
                     <th className="px-4 py-2.5 font-medium">Parcela</th>
                     <th className="px-4 py-2.5 font-medium">Situação</th>
                     <th className="px-4 py-2.5 font-medium">Vencimento</th>
-                    <th className="px-4 py-2.5 font-medium">Recebimento</th>
+                    <th className="px-4 py-2.5 font-medium">Previsão</th>
+                    <th className="px-4 py-2.5 font-medium">Últ. Recebimento</th>
                     <th className="px-4 py-2.5 text-right font-medium">Valor</th>
                   </tr>
                 </thead>
@@ -522,11 +523,14 @@ export default function RastreioFaturamentoPage() {
                         {c.vencimento ? formatarData(c.vencimento) : "—"}
                       </td>
                       <td className="px-4 py-2 text-slate-600">
-                        {c.ultimoRecebimento
-                          ? formatarData(c.ultimoRecebimento)
-                          : c.previsaoRecebimento
-                          ? formatarData(c.previsaoRecebimento)
-                          : "—"}
+                        {c.previsaoRecebimento ? formatarData(c.previsaoRecebimento) : "—"}
+                      </td>
+                      <td
+                        className={`px-4 py-2 ${
+                          c.ultimoRecebimento ? "font-medium text-emerald-700" : "text-slate-400"
+                        }`}
+                      >
+                        {c.ultimoRecebimento ? formatarData(c.ultimoRecebimento) : "—"}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums">
                         {formatarMoeda(valorDe(c, detalhe.col))}
@@ -535,7 +539,7 @@ export default function RastreioFaturamentoPage() {
                   ))}
                   {detContas.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                         Nenhum lançamento.
                       </td>
                     </tr>
@@ -543,7 +547,7 @@ export default function RastreioFaturamentoPage() {
                 </tbody>
                 <tfoot className="sticky bottom-0 bg-slate-50">
                   <tr className="border-t border-slate-200 font-semibold text-slate-800">
-                    <td className="px-4 py-2.5" colSpan={6}>
+                    <td className="px-4 py-2.5" colSpan={7}>
                       Total ({detContas.length})
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
