@@ -259,22 +259,67 @@ async function mapaCategorias(cred: OmieCredenciais): Promise<Record<string, str
   }
 }
 
+// Nomes candidatos para o filtro de data do mfListarRequest (descobertos em
+// runtime, pois variam e a doc é fechada). Ordem = preferência (mais próximo
+// da emissão/competência primeiro).
+const CANDIDATOS_FILTRO_DATA: [string, string][] = [
+  ["dDtRegistroDe", "dDtRegistroAte"],
+  ["dDtEmissaoDe", "dDtEmissaoAte"],
+  ["dDtPrevistaDe", "dDtPrevistaAte"],
+  ["dDtPrevisaoDe", "dDtPrevisaoAte"],
+  ["dDtPagtoDe", "dDtPagtoAte"],
+];
+
+function tagInvalida(msg: string): boolean {
+  return /n[aã]o faz parte da estrutura/i.test(msg);
+}
+
 /**
- * Lista os Movimentos Financeiros de RECEITA (contas a receber), paginando e
- * filtrando por data de emissão. Esta é a fonte usada na sincronização real,
- * pois traz os valores realizados (recebido/aberto/desconto/juros/multa).
+ * Descobre qual par de tags de data o mfListarRequest aceita, testando os
+ * candidatos. Retorna o objeto de filtro pronto (ou {} se nenhum servir).
+ */
+async function descobrirFiltroData(
+  cred: OmieCredenciais,
+  dataDe?: string,
+  dataAte?: string
+): Promise<Record<string, string>> {
+  if (!dataDe) return {};
+  for (const [de, ate] of CANDIDATOS_FILTRO_DATA) {
+    const param: Record<string, unknown> = { nPagina: 1, nRegPorPagina: 1, [de]: dataDe };
+    if (dataAte) param[ate] = dataAte;
+    try {
+      await callOmie(cred, "financas/mf/", "ListarMovimentos", param);
+      const filtro: Record<string, string> = { [de]: dataDe };
+      if (dataAte) filtro[ate] = dataAte;
+      return filtro;
+    } catch (e) {
+      if (e instanceof Error && tagInvalida(e.message)) continue; // tag inválida → próximo
+      throw e; // erro real (credencial, rede, etc.)
+    }
+  }
+  return {};
+}
+
+/**
+ * Lista os Movimentos Financeiros de RECEITA (contas a receber), paginando.
+ * Esta é a fonte usada na sincronização real, pois traz os valores realizados
+ * (recebido/aberto/desconto/juros/multa). O filtro de data é descoberto em
+ * runtime e a trava final por competência (data de emissão) é aplicada aqui.
  */
 export async function listarMovimentosReceber(
   cred: OmieCredenciais,
   opcoes: { dataDe?: string; dataAte?: string; debug?: boolean; maxPaginas?: number } = {}
 ): Promise<ResultadoSincOmie> {
   const nRegPorPagina = 500;
-  const maxPaginas = opcoes.maxPaginas ?? 200;
+  const maxPaginas = opcoes.maxPaginas ?? 300;
   const movimentos: Record<string, unknown>[] = [];
   let pagina = 1;
   let totalPaginas = 1;
   let totalRegistros = 0;
   let amostraBruta: Record<string, unknown> | undefined;
+
+  // Descobre o filtro de data válido para este endpoint (uma vez).
+  const filtroData = await descobrirFiltroData(cred, opcoes.dataDe, opcoes.dataAte);
 
   do {
     const param: Record<string, unknown> = {
@@ -282,9 +327,8 @@ export async function listarMovimentosReceber(
       nRegPorPagina,
       cOrdenarPor: "CODIGO",
       cOrdemDecrescente: "S",
+      ...filtroData,
     };
-    if (opcoes.dataDe) param.dDtEmissaoDe = opcoes.dataDe;
-    if (opcoes.dataAte) param.dDtEmissaoAte = opcoes.dataAte;
 
     const resp = await callOmie<{
       nTotPaginas?: number;
