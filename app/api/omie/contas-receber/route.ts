@@ -62,6 +62,10 @@ export async function GET(req: NextRequest) {
       emitidoEm: new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),
       totalRegistros: resultado.totalRegistros,
       totalPaginas: resultado.totalPaginas,
+      filtroUsado: resultado.filtroUsado,
+      paginasLidas: resultado.paginasLidas,
+      competencias: resultado.competencias,
+      truncado: resultado.truncado,
       contas: resultado.contas,
       ...(debug ? { amostraBruta: resultado.amostraBruta } : {}),
     });

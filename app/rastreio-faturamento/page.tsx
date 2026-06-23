@@ -136,8 +136,12 @@ export default function RastreioFaturamentoPage() {
         setAviso("O Omie respondeu, mas nenhuma conta a receber foi retornada no período.");
       } else {
         importarContas(dados.contas, dados.emitidoEm ?? null);
+        const comps = dados.competencias ?? [];
+        const faixa = comps.length ? `${comps[0]} a ${comps[comps.length - 1]}` : "—";
         setAviso(
-          `${dados.contas.length} contas sincronizadas do Omie (${dados.totalRegistros} registros).`
+          `${dados.contas.length} contas sincronizadas do Omie · filtro: ${dados.filtroUsado} · ` +
+            `páginas ${dados.paginasLidas}/${dados.totalPaginas} · competências: ${faixa}` +
+            (dados.truncado ? " · (limite de páginas atingido — avise para ampliar)" : "")
         );
       }
     } catch {

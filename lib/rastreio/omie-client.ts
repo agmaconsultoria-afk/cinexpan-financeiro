@@ -9,6 +9,7 @@
  * Recurso: financas/contareceber/  (método ListarContasReceber)
  */
 import { ContaReceber } from "./types";
+import { mesDe } from "./logic";
 
 const OMIE_BASE = "https://app.omie.com.br/api/v1";
 
@@ -311,22 +312,28 @@ export async function listarMovimentosReceber(
   opcoes: { dataDe?: string; dataAte?: string; debug?: boolean; maxPaginas?: number } = {}
 ): Promise<ResultadoSincOmie> {
   const nRegPorPagina = 500;
-  const maxPaginas = opcoes.maxPaginas ?? 300;
-  const movimentos: Record<string, unknown>[] = [];
+  const maxPaginas = opcoes.maxPaginas ?? 40; // limite de segurança (nunca trava)
+  const emissaoMin = brParaIso(opcoes.dataDe);
+
+  // Descobre o filtro de data válido para este endpoint (best effort).
+  const filtroData = await descobrirFiltroData(cred, opcoes.dataDe, opcoes.dataAte);
+  const filtroUsado = Object.keys(filtroData)[0] ?? "nenhum";
+
+  const categorias = await mapaCategorias(cred);
+  const contas: ContaReceber[] = [];
   let pagina = 1;
   let totalPaginas = 1;
   let totalRegistros = 0;
   let amostraBruta: Record<string, unknown> | undefined;
-
-  // Descobre o filtro de data válido para este endpoint (uma vez).
-  const filtroData = await descobrirFiltroData(cred, opcoes.dataDe, opcoes.dataAte);
+  let truncado = false;
+  let paginasSemQualificar = 0;
 
   do {
     const param: Record<string, unknown> = {
       nPagina: pagina,
       nRegPorPagina,
       cOrdenarPor: "CODIGO",
-      cOrdemDecrescente: "S",
+      cOrdemDecrescente: "S", // mais recentes primeiro
       ...filtroData,
     };
 
@@ -340,29 +347,49 @@ export async function listarMovimentosReceber(
     totalRegistros = resp.nTotRegistros ?? 0;
     const lote = resp.movimentos ?? [];
     if (pagina === 1 && lote.length > 0) amostraBruta = lote[0];
-    movimentos.push(...lote);
+
+    let qualificaramNaPagina = 0;
+    for (const mov of lote) {
+      if (!ehReceita(mov)) continue;
+      const conta = omieMovimentoParaContaReceber(mov);
+      if (categorias[conta.categoria]) conta.categoria = categorias[conta.categoria];
+      if (emissaoMin && conta.dataEmissao && conta.dataEmissao < emissaoMin) continue;
+      contas.push(conta);
+      qualificaramNaPagina++;
+    }
+
+    // Parada antecipada: ordenado por código desc, ao passar do corte de 2025
+    // (página inteira sem títulos qualificados), encerra. Exige já termos
+    // coletado algo, para não parar logo na 1ª página.
+    if (emissaoMin && qualificaramNaPagina === 0 && contas.length > 0) {
+      paginasSemQualificar++;
+      if (paginasSemQualificar >= 2) break;
+    } else {
+      paginasSemQualificar = 0;
+    }
+
+    if (pagina >= maxPaginas && pagina < totalPaginas) {
+      truncado = true;
+      break;
+    }
+
     pagina++;
-    if (pagina <= totalPaginas && pagina <= maxPaginas) await sleep(300);
-  } while (pagina <= totalPaginas && pagina <= maxPaginas);
+    if (pagina <= totalPaginas) await sleep(200);
+  } while (pagina <= totalPaginas);
 
-  const categorias = await mapaCategorias(cred);
-  const emissaoMin = brParaIso(opcoes.dataDe);
-
-  let contas = movimentos.filter(ehReceita).map((mov) => {
-    const conta = omieMovimentoParaContaReceber(mov);
-    // Enriquecer categoria com a descrição (para as regras de Valor Faturado)
-    if (categorias[conta.categoria]) conta.categoria = categorias[conta.categoria];
-    return conta;
-  });
-  if (emissaoMin) {
-    contas = contas.filter((c) => !c.dataEmissao || c.dataEmissao >= emissaoMin);
-  }
+  const competencias = Array.from(
+    new Set(contas.map((c) => mesDe(c.dataEmissao)).filter(Boolean))
+  ).sort();
 
   return {
     contas,
     totalRegistros,
     totalPaginas,
     amostraBruta: opcoes.debug ? amostraBruta : undefined,
+    filtroUsado,
+    paginasLidas: pagina > totalPaginas ? totalPaginas : pagina,
+    competencias,
+    truncado,
   };
 }
 
@@ -379,6 +406,11 @@ export interface ResultadoSincOmie {
   totalRegistros: number;
   totalPaginas: number;
   amostraBruta?: Record<string, unknown>;
+  // Diagnóstico da sincronização
+  filtroUsado?: string;
+  paginasLidas?: number;
+  competencias?: string[];
+  truncado?: boolean;
 }
 
 /**
