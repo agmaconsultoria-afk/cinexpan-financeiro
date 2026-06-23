@@ -51,12 +51,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Fonte padrão = Movimentos Financeiros (tem os valores realizados).
-    // ?fonte=contareceber força o endpoint de títulos (sem valores realizados).
+    // Fonte padrão = ListarContasReceber (inclui títulos em aberto + recebidos,
+    // com Recebido/Falta/Atrasado corretos). ?fonte=mf usa Movimentos Financeiros.
     const resultado =
-      fonte === "contareceber"
-        ? await listarContasReceber(cred, { dataDe, dataAte, debug })
-        : await listarMovimentosReceber(cred, { dataDe, dataAte, debug });
+      fonte === "mf"
+        ? await listarMovimentosReceber(cred, { dataDe, dataAte, debug })
+        : await listarContasReceber(cred, { dataDe, dataAte, debug });
     return NextResponse.json({
       ok: true,
       emitidoEm: new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),

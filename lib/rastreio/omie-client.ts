@@ -487,6 +487,7 @@ export async function listarContasReceber(
   let pagina = 1;
   let totalPaginas = 1;
   let totalRegistros = 0;
+  let truncado = false;
   let amostraBruta: Record<string, unknown> | undefined;
 
   do {
@@ -513,20 +514,38 @@ export async function listarContasReceber(
     const lote = resp.conta_receber_cadastro ?? [];
     if (pagina === 1 && lote.length > 0) amostraBruta = lote[0];
     todas.push(...lote);
+    if (pagina >= maxPaginas && pagina < totalPaginas) {
+      truncado = true;
+      break;
+    }
     pagina++;
-  } while (pagina <= totalPaginas && pagina <= maxPaginas);
+    if (pagina <= totalPaginas) await sleep(200);
+  } while (pagina <= totalPaginas);
 
   // Trava por competência (data de emissão): só de `dataDe` em diante.
   const emissaoMin = brParaIso(opcoes.dataDe);
-  let contas = todas.map(omieParaContaReceber);
+  const categorias = await mapaCategorias(cred);
+  let contas = todas.map((raw) => {
+    const conta = omieParaContaReceber(raw);
+    if (categorias[conta.categoria]) conta.categoria = categorias[conta.categoria];
+    return conta;
+  });
   if (emissaoMin) {
     contas = contas.filter((c) => !c.dataEmissao || c.dataEmissao >= emissaoMin);
   }
+
+  const competencias = Array.from(
+    new Set(contas.map((c) => mesDe(c.dataEmissao)).filter(Boolean))
+  ).sort();
 
   return {
     contas,
     totalRegistros,
     totalPaginas,
     amostraBruta: opcoes.debug ? amostraBruta : undefined,
+    filtroUsado: opcoes.dataDe ? "filtrar_por_data_de" : "nenhum",
+    paginasLidas: pagina > totalPaginas ? totalPaginas : pagina,
+    competencias,
+    truncado,
   };
 }
