@@ -91,6 +91,8 @@ export default function RastreioFaturamentoPage() {
   const [aviso, setAviso] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
+  // Mês a sincronizar do Omie (independente do que já está carregado).
+  const [mesOmie, setMesOmie] = useState(() => new Date().toISOString().slice(0, 7));
 
   const pf = vendasPF[competencia] ?? 0;
   const dem = useMemo(
@@ -129,15 +131,18 @@ export default function RastreioFaturamentoPage() {
     setAviso(null);
     try {
       const resp = await fetch(
-        `/api/omie/contas-receber?competencia=${encodeURIComponent(competencia)}`
+        `/api/omie/contas-receber?competencia=${encodeURIComponent(mesOmie)}`
       );
       const dados = await resp.json();
       if (!dados.ok) {
         setAviso(dados.erro ?? "Não foi possível sincronizar com o Omie.");
       } else if (!dados.contas?.length) {
-        setAviso("O Omie respondeu, mas nenhuma conta a receber foi retornada no período.");
+        setAviso(
+          "O Omie respondeu, mas nenhuma conta a receber foi retornada para esse mês."
+        );
       } else {
         importarContas(dados.contas, dados.emitidoEm ?? null);
+        setCompetencia(mesOmie); // mostra a competência recém-sincronizada
         const comps = dados.competencias ?? [];
         const faixa = comps.length ? `${comps[0]} a ${comps[comps.length - 1]}` : "—";
         setAviso(
@@ -178,10 +183,17 @@ export default function RastreioFaturamentoPage() {
                 e.target.value = "";
               }}
             />
+            <input
+              type="month"
+              value={mesOmie}
+              onChange={(e) => setMesOmie(e.target.value)}
+              title="Mês (competência) a sincronizar do Omie"
+              className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm focus:border-brand-500 focus:outline-none"
+            />
             <button
               onClick={sincronizarOmie}
               disabled={sincronizando}
-              title="Sincroniza a competência selecionada a partir do Omie"
+              title="Sincroniza o mês selecionado ao lado, a partir do Omie"
               className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
             >
               <Cloud className={`h-4 w-4 ${sincronizando ? "animate-pulse" : ""}`} />
