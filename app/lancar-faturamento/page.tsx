@@ -45,11 +45,14 @@ export default function LancarFaturamentoPage() {
   const { faturamento, setFaturamentoMes, vendasPF, setVendasPFMes } = useRastreio();
   const [novoMes, setNovoMes] = useState("");
 
-  // Lista de competências a exibir: união do que já tem faturamento/PF lançado.
+  // Lista de competências: anos de 2025/2026 pré-carregados + o que já existe.
   const meses = useMemo(() => {
     const set = new Set<string>([...Object.keys(faturamento), ...Object.keys(vendasPF)]);
+    for (const ano of [2025, 2026]) {
+      for (let m = 1; m <= 12; m++) set.add(`${ano}-${String(m).padStart(2, "0")}`);
+    }
     return Array.from(set)
-      .filter(Boolean)
+      .filter((m) => /^\d{4}-\d{2}$/.test(m))
       .sort()
       .reverse(); // mais recentes no topo
   }, [faturamento, vendasPF]);

@@ -6,6 +6,7 @@ import {
   amostrarContasReceber,
   amostrarMovimentos,
 } from "@/lib/rastreio/omie-client";
+import { salvarCompetencia } from "@/lib/rastreio/db";
 
 // Sempre dinâmico (lê credenciais e chama API externa em tempo de requisição).
 export const dynamic = "force-dynamic";
@@ -90,9 +91,20 @@ export async function GET(req: NextRequest) {
             pagtoDe,
             pagtoAte,
           });
+
+    const emitidoEm = new Date().toLocaleString("pt-BR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+
+    // Grava a competência na base (histórico) — não re-sincronizar o passado.
+    if (competencia && fonte !== "mf" && resultado.contas.length > 0) {
+      salvarCompetencia(competencia, resultado.contas, emitidoEm);
+    }
+
     return NextResponse.json({
       ok: true,
-      emitidoEm: new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),
+      emitidoEm,
       totalRegistros: resultado.totalRegistros,
       totalPaginas: resultado.totalPaginas,
       filtroUsado: resultado.filtroUsado,

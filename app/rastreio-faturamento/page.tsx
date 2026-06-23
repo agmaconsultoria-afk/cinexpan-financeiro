@@ -81,7 +81,7 @@ export default function RastreioFaturamentoPage() {
     setFaturamentoMes,
     vendasPF,
     setVendasPFMes,
-    importarContas,
+    carregarDoBanco,
     voltarParaExemplo,
   } = useRastreio();
 
@@ -114,7 +114,7 @@ export default function RastreioFaturamentoPage() {
           "O Omie respondeu, mas nenhuma conta a receber foi retornada para esse mês."
         );
       } else {
-        importarContas(dados.contas, dados.emitidoEm ?? null);
+        await carregarDoBanco(); // recarrega o histórico acumulado da base
         setCompetencia(mesOmie); // mostra a competência recém-sincronizada
         const enr =
           dados.enriquecidos != null
@@ -177,10 +177,10 @@ export default function RastreioFaturamentoPage() {
       <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
         <span
           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-            fonte === "bd" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            fonte === "banco" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
           }`}
         >
-          {fonte === "bd" ? (
+          {fonte === "banco" ? (
             <>
               <FileSpreadsheet className="h-3.5 w-3.5" /> Dados do Omie
             </>
@@ -190,7 +190,7 @@ export default function RastreioFaturamentoPage() {
             </>
           )}
         </span>
-        {fonte === "bd" && (
+        {fonte === "banco" && (
           <button
             onClick={voltarParaExemplo}
             className="text-xs text-slate-500 underline hover:text-slate-700"
