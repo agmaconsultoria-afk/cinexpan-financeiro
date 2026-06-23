@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { lerCredenciais, atualizarCacheClientes } from "@/lib/rastreio/omie-client";
-import { reaplicarNomesClientes } from "@/lib/rastreio/db";
+import { reaplicarNomesClientes, diagnosticoClientes } from "@/lib/rastreio/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+/** GET /api/rastreio/clientes — diagnóstico do cache de clientes. */
+export async function GET() {
+  return NextResponse.json({ ok: true, ...diagnosticoClientes() });
+}
 
 /**
  * POST /api/rastreio/clientes — carrega o cadastro de clientes do Omie para o

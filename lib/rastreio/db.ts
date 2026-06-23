@@ -146,3 +146,47 @@ export function reaplicarNomesClientes(): number {
   if (n > 0) escrever(s);
   return n;
 }
+
+/** Diagnóstico do cache de clientes vs. os códigos presentes nas contas. */
+export function diagnosticoClientes() {
+  const s = ler();
+  const cache = s.clientes ?? {};
+  const totalCache = Object.keys(cache).length;
+
+  let totalContas = 0;
+  let comCodigo = 0;
+  let resolviveis = 0;
+  const exemplos: { clienteCodigo: string; clienteAtual: string; noCache: string | null }[] = [];
+
+  for (const comp of Object.values(s.competencias)) {
+    for (const c of comp.contas) {
+      totalContas++;
+      if (c.clienteCodigo) {
+        comCodigo++;
+        if (cache[c.clienteCodigo]) resolviveis++;
+        if (exemplos.length < 10) {
+          exemplos.push({
+            clienteCodigo: c.clienteCodigo,
+            clienteAtual: c.cliente,
+            noCache: cache[c.clienteCodigo] ?? null,
+          });
+        }
+      }
+    }
+  }
+
+  // Amostra de chaves do cache (para comparar o formato dos códigos)
+  const amostraCache = Object.entries(cache)
+    .slice(0, 5)
+    .map(([codigo, nome]) => ({ codigo, nome }));
+
+  return {
+    totalCache,
+    atualizadoEm: s.clientesAtualizadoEm ?? null,
+    totalContas,
+    comCodigo,
+    resolviveis,
+    exemplos,
+    amostraCache,
+  };
+}
