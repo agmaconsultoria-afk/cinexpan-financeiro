@@ -274,7 +274,7 @@ async function enriquecerComMF(
   contas: ContaReceber[],
   pagtoDe: string,
   pagtoAte: string | undefined,
-  maxPaginas = 80
+  maxPaginas = 60
 ): Promise<{ enriquecidos: number; paginasMF: number; truncadoMF: boolean }> {
   const porCodigo = new Map<string, ContaReceber>();
   const porDocParc = new Map<string, ContaReceber>();
@@ -283,10 +283,15 @@ async function enriquecerComMF(
     if (c.notaFiscal && c.parcela) porDocParc.set(`${c.notaFiscal}|${c.parcela}`, c);
   }
 
-  let enriquecidos = 0;
+  // Títulos que têm baixa a buscar (recebidos/parciais). Quando todos forem
+  // casados, paramos — não há motivo de varrer o resto dos pagamentos.
+  const alvoTotal = contas.filter((c) => /receb|pago|liquid/i.test(c.situacao)).length;
+
+  const casados = new Set<ContaReceber>();
   let pagina = 1;
   let totalPaginas = 1;
   let truncadoMF = false;
+  let semNovos = 0;
 
   do {
     const param: Record<string, unknown> = {
@@ -302,6 +307,7 @@ async function enriquecerComMF(
     }>(cred, "financas/mf/", "ListarMovimentos", param);
 
     totalPaginas = resp.nTotPaginas ?? 1;
+    let novosNaPagina = 0;
     for (const mov of resp.movimentos ?? []) {
       if (!ehReceita(mov)) continue;
       const d = (mov.detalhes as Record<string, unknown>) ?? {};
@@ -319,18 +325,27 @@ async function enriquecerComMF(
         r.nValAberto != null ? num(r.nValAberto) : Math.max(0, alvo.valorConta - pago);
       const ur = dataIso(d.dDtPagamento);
       if (ur) alvo.ultimoRecebimento = ur;
-      enriquecidos++;
+      if (!casados.has(alvo)) {
+        casados.add(alvo);
+        novosNaPagina++;
+      }
     }
+
+    // Parada antecipada: já casou todos os títulos recebidos.
+    if (alvoTotal > 0 && casados.size >= alvoTotal) break;
+    // Ou várias páginas seguidas sem casar nada novo (passou da janela útil).
+    semNovos = novosNaPagina === 0 ? semNovos + 1 : 0;
+    if (semNovos >= 8 && casados.size > 0) break;
 
     if (pagina >= maxPaginas && pagina < totalPaginas) {
       truncadoMF = true;
       break;
     }
     pagina++;
-    if (pagina <= totalPaginas) await sleep(200);
+    if (pagina <= totalPaginas) await sleep(120);
   } while (pagina <= totalPaginas);
 
-  return { enriquecidos, paginasMF: pagina > totalPaginas ? totalPaginas : pagina, truncadoMF };
+  return { enriquecidos: casados.size, paginasMF: pagina > totalPaginas ? totalPaginas : pagina, truncadoMF };
 }
 
 // Nomes candidatos para o filtro de data do mfListarRequest (descobertos em
