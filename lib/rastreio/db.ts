@@ -25,6 +25,8 @@ interface Store {
   competencias: Record<string, CompetenciaArmazenada>;
   faturamento: Record<string, number>;
   vendasPF: Record<string, number>;
+  clientes?: Record<string, string>; // código do cliente -> nome
+  clientesAtualizadoEm?: string; // ISO
 }
 
 function storeVazio(): Store {
@@ -111,5 +113,18 @@ export function setFaturamento(mes: string, valor: number): void {
 export function setVendasPF(mes: string, valor: number): void {
   const s = ler();
   s.vendasPF[mes] = valor;
+  escrever(s);
+}
+
+/** Cache de nomes de clientes (código -> nome) + quando foi atualizado. */
+export function getClientes(): { map: Record<string, string>; atualizadoEm: string | null } {
+  const s = ler();
+  return { map: s.clientes ?? {}, atualizadoEm: s.clientesAtualizadoEm ?? null };
+}
+
+export function mergeClientes(novos: Record<string, string>): void {
+  const s = ler();
+  s.clientes = { ...(s.clientes ?? {}), ...novos };
+  s.clientesAtualizadoEm = new Date().toISOString();
   escrever(s);
 }

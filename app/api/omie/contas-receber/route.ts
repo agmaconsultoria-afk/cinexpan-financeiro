@@ -5,6 +5,7 @@ import {
   listarMovimentosReceber,
   amostrarContasReceber,
   amostrarMovimentos,
+  resolverClientes,
 } from "@/lib/rastreio/omie-client";
 import { salvarCompetencia } from "@/lib/rastreio/db";
 
@@ -96,6 +97,11 @@ export async function GET(req: NextRequest) {
       dateStyle: "short",
       timeStyle: "short",
     });
+
+    // Resolve os nomes dos clientes (o ListarContasReceber só traz o código).
+    if (fonte !== "mf" && resultado.contas.length > 0) {
+      await resolverClientes(cred, resultado.contas);
+    }
 
     // Grava a competência na base (histórico) — não re-sincronizar o passado.
     if (competencia && fonte !== "mf" && resultado.contas.length > 0) {

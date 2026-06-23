@@ -10,6 +10,7 @@
  */
 import { ContaReceber } from "./types";
 import { mesDe } from "./logic";
+import { getClientes, mergeClientes } from "./db";
 
 const OMIE_BASE = "https://app.omie.com.br/api/v1";
 
@@ -196,6 +197,8 @@ export function omieParaContaReceber(raw: Record<string, unknown>): ContaReceber
     vendedor: (pega(r, "vendedor", "cNomeVendedor") ?? "").toString(),
     projeto: (pega(r, "projeto", "cNomeProjeto") ?? "").toString(),
     codigoOmie: (pega(r, "codigo_lancamento_omie", "nCodTitulo") ?? "").toString(),
+    clienteCodigo: (pega(r, "codigo_cliente_fornecedor", "nCodCliente") ?? "").toString(),
+    clienteDoc: (pega(r, "cpf_cnpj_cliente", "cCPFCNPJCliente") ?? "").toString(),
   };
 }
 
@@ -325,6 +328,9 @@ async function enriquecerComMF(
         r.nValAberto != null ? num(r.nValAberto) : Math.max(0, alvo.valorConta - pago);
       const ur = dataIso(d.dDtPagamento);
       if (ur) alvo.ultimoRecebimento = ur;
+      if (!alvo.clienteDoc && d.cCPFCNPJCliente) {
+        alvo.clienteDoc = (d.cCPFCNPJCliente as string).toString();
+      }
       if (!casados.has(alvo)) {
         casados.add(alvo);
         novosNaPagina++;
@@ -346,6 +352,84 @@ async function enriquecerComMF(
   } while (pagina <= totalPaginas);
 
   return { enriquecidos: casados.size, paginasMF: pagina > totalPaginas ? totalPaginas : pagina, truncadoMF };
+}
+
+/** Mapa código de cliente -> nome (nome fantasia ou razão social). */
+async function mapaClientes(
+  cred: OmieCredenciais,
+  maxPaginas = 200
+): Promise<Record<string, string>> {
+  const mapa: Record<string, string> = {};
+  let pagina = 1;
+  let total = 1;
+  do {
+    const resp = await callOmie<{
+      total_de_paginas?: number;
+      clientes_cadastro?: Record<string, unknown>[];
+    }>(cred, "geral/clientes/", "ListarClientes", {
+      pagina,
+      registros_por_pagina: 500,
+      apenas_importado_api: "N",
+    });
+    total = resp.total_de_paginas ?? 1;
+    for (const cl of resp.clientes_cadastro ?? []) {
+      const cod = (cl.codigo_cliente_omie ?? "").toString();
+      const nome = (cl.nome_fantasia || cl.razao_social || "").toString().trim();
+      if (cod && nome) mapa[cod] = nome;
+    }
+    pagina++;
+    if (pagina <= total && pagina <= maxPaginas) await sleep(150);
+  } while (pagina <= total && pagina <= maxPaginas);
+  return mapa;
+}
+
+/**
+ * Resolve os nomes dos clientes nas contas (o ListarContasReceber só traz o
+ * código). Usa o cache da base; se faltar e o cache estiver vazio/antigo,
+ * busca a lista de clientes e atualiza o cache. Fallback: CNPJ ou #código.
+ */
+export async function resolverClientes(
+  cred: OmieCredenciais,
+  contas: ContaReceber[]
+): Promise<number> {
+  const { map, atualizadoEm } = getClientes();
+  let cache = map;
+
+  const necessarios = new Set(
+    contas.filter((c) => !c.cliente && c.clienteCodigo).map((c) => c.clienteCodigo as string)
+  );
+  const faltando = [...necessarios].filter((cod) => !cache[cod]);
+  const velho = !atualizadoEm || Date.now() - Date.parse(atualizadoEm) > 6 * 3600 * 1000;
+
+  if (faltando.length > 0 && (Object.keys(cache).length === 0 || velho)) {
+    try {
+      const novos = await mapaClientes(cred);
+      if (Object.keys(novos).length > 0) {
+        mergeClientes(novos);
+        cache = { ...cache, ...novos };
+      }
+    } catch {
+      /* segue com fallback */
+    }
+  }
+
+  let resolvidos = 0;
+  for (const c of contas) {
+    if (c.cliente) {
+      resolvidos++;
+      continue;
+    }
+    const nome = c.clienteCodigo ? cache[c.clienteCodigo] : undefined;
+    if (nome) {
+      c.cliente = nome;
+      resolvidos++;
+    } else if (c.clienteDoc) {
+      c.cliente = c.clienteDoc;
+    } else if (c.clienteCodigo) {
+      c.cliente = `#${c.clienteCodigo}`;
+    }
+  }
+  return resolvidos;
 }
 
 // Nomes candidatos para o filtro de data do mfListarRequest (descobertos em

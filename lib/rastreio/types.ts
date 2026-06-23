@@ -34,6 +34,8 @@ export interface ContaReceber {
   vendedor: string;
   projeto: string;
   codigoOmie?: string; // código do lançamento no Omie (para cruzar com Movimentos)
+  clienteCodigo?: string; // código do cliente no Omie (para resolver o nome)
+  clienteDoc?: string; // CNPJ/CPF do cliente (fallback de identificação)
 }
 
 /** Conta a receber com as colunas calculadas da planilha-mãe. */
