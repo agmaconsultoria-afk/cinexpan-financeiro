@@ -6,6 +6,7 @@ import { useRastreio } from "@/lib/rastreio/context";
 import { rotuloMesAno } from "@/lib/rastreio/logic";
 import { formatarMoeda } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
+import { SeletorMes } from "@/components/SeletorMes";
 
 // Campo de moeda editável (pt-BR) com salvamento ao sair/Enter.
 function CampoMoeda({
@@ -43,7 +44,7 @@ function CampoMoeda({
 
 export default function LancarFaturamentoPage() {
   const { faturamento, setFaturamentoMes, vendasPF, setVendasPFMes } = useRastreio();
-  const [novoMes, setNovoMes] = useState("");
+  const [novoMes, setNovoMes] = useState(() => new Date().toISOString().slice(0, 7));
 
   // Lista de competências: anos de 2025/2026 pré-carregados + o que já existe.
   const meses = useMemo(() => {
@@ -74,12 +75,7 @@ export default function LancarFaturamentoPage() {
         subtitulo="Faturamento do mês e Vendas PF por competência (base do % rastreado)"
         acoes={
           <div className="flex items-center gap-2">
-            <input
-              type="month"
-              value={novoMes}
-              onChange={(e) => setNovoMes(e.target.value)}
-              className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm focus:border-brand-500 focus:outline-none"
-            />
+            <SeletorMes value={novoMes} onChange={setNovoMes} />
             <button
               onClick={adicionarMes}
               className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"

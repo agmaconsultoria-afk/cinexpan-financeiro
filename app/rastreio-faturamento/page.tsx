@@ -14,6 +14,7 @@ import { useRastreio } from "@/lib/rastreio/context";
 import { montarDemonstrativo, rotuloMesAno } from "@/lib/rastreio/logic";
 import { formatarMoeda, formatarPercent } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
+import { SeletorMes } from "@/components/SeletorMes";
 import { Visao } from "@/lib/rastreio/types";
 
 function ValorEditavel({
@@ -147,13 +148,7 @@ export default function RastreioFaturamentoPage() {
         subtitulo="Cruza o faturamento (competência) com o financeiro (contas a receber)"
         acoes={
           <div className="no-print flex flex-wrap items-center gap-2">
-            <input
-              type="month"
-              value={mesOmie}
-              onChange={(e) => setMesOmie(e.target.value)}
-              title="Mês (competência) a sincronizar do Omie"
-              className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm focus:border-brand-500 focus:outline-none"
-            />
+            <SeletorMes value={mesOmie} onChange={setMesOmie} />
             <button
               onClick={sincronizarOmie}
               disabled={sincronizando}
