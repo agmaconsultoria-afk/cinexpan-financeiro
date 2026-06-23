@@ -128,7 +128,9 @@ export default function RastreioFaturamentoPage() {
     setSincronizando(true);
     setAviso(null);
     try {
-      const resp = await fetch("/api/omie/contas-receber");
+      const resp = await fetch(
+        `/api/omie/contas-receber?competencia=${encodeURIComponent(competencia)}`
+      );
       const dados = await resp.json();
       if (!dados.ok) {
         setAviso(dados.erro ?? "Não foi possível sincronizar com o Omie.");
@@ -179,6 +181,7 @@ export default function RastreioFaturamentoPage() {
             <button
               onClick={sincronizarOmie}
               disabled={sincronizando}
+              title="Sincroniza a competência selecionada a partir do Omie"
               className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
             >
               <Cloud className={`h-4 w-4 ${sincronizando ? "animate-pulse" : ""}`} />

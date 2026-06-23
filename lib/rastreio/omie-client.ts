@@ -479,7 +479,14 @@ function brParaIso(s: string | undefined): string | null {
 
 export async function listarContasReceber(
   cred: OmieCredenciais,
-  opcoes: { dataDe?: string; dataAte?: string; debug?: boolean; maxPaginas?: number } = {}
+  opcoes: {
+    dataDe?: string;
+    dataAte?: string;
+    emissaoMin?: string; // ISO YYYY-MM-DD (trava de competência inicial)
+    emissaoMax?: string; // ISO YYYY-MM-DD (trava de competência final)
+    debug?: boolean;
+    maxPaginas?: number;
+  } = {}
 ): Promise<ResultadoSincOmie> {
   const registrosPorPagina = 500;
   const maxPaginas = opcoes.maxPaginas ?? 60;
@@ -519,17 +526,21 @@ export async function listarContasReceber(
     if (pagina <= totalPaginas) await sleep(200);
   } while (pagina <= totalPaginas);
 
-  // Trava por competência (data de emissão): só de `dataDe` em diante.
-  const emissaoMin = brParaIso(opcoes.dataDe);
+  // Trava por competência (data de emissão): no intervalo [emissaoMin, emissaoMax].
+  const emissaoMin = opcoes.emissaoMin ?? brParaIso(opcoes.dataDe);
+  const emissaoMax = opcoes.emissaoMax;
   const categorias = await mapaCategorias(cred);
   let contas = todas.map((raw) => {
     const conta = omieParaContaReceber(raw);
     if (categorias[conta.categoria]) conta.categoria = categorias[conta.categoria];
     return conta;
   });
-  if (emissaoMin) {
-    contas = contas.filter((c) => !c.dataEmissao || c.dataEmissao >= emissaoMin);
-  }
+  contas = contas.filter((c) => {
+    if (!c.dataEmissao) return true;
+    if (emissaoMin && c.dataEmissao < emissaoMin) return false;
+    if (emissaoMax && c.dataEmissao > emissaoMax) return false;
+    return true;
+  });
 
   const competencias = Array.from(
     new Set(contas.map((c) => mesDe(c.dataEmissao)).filter(Boolean))

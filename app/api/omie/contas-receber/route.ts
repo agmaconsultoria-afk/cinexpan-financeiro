@@ -31,12 +31,29 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  // Filtro padrão: a partir de 01/01/2025 (evita puxar todo o histórico).
-  const dataDe = searchParams.get("de") ?? "01/01/2025";
-  const dataAte = searchParams.get("ate") ?? undefined;
   const debug = searchParams.get("debug") === "1";
-
   const fonte = searchParams.get("fonte"); // "mf" para Movimentos Financeiros
+  const competencia = searchParams.get("competencia"); // "YYYY-MM"
+
+  // Janela de busca. Por competência (preferido): busca o mês selecionado,
+  // com folga de registro até o mês seguinte, e trava a emissão no mês exato.
+  let dataDe: string;
+  let dataAte: string | undefined;
+  let emissaoMin: string | undefined;
+  let emissaoMax: string | undefined;
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  if (competencia && /^\d{4}-\d{2}$/.test(competencia)) {
+    const [y, m] = competencia.split("-").map(Number);
+    const ultimoDia = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const proxMesUlt = new Date(Date.UTC(y, m + 1, 0)); // último dia do mês seguinte
+    dataDe = `01/${p2(m)}/${y}`;
+    dataAte = `${p2(proxMesUlt.getUTCDate())}/${p2(proxMesUlt.getUTCMonth() + 1)}/${proxMesUlt.getUTCFullYear()}`;
+    emissaoMin = `${y}-${p2(m)}-01`;
+    emissaoMax = `${y}-${p2(m)}-${p2(ultimoDia)}`;
+  } else {
+    dataDe = searchParams.get("de") ?? "01/01/2025";
+    dataAte = searchParams.get("ate") ?? undefined;
+  }
 
   // Modo debug: resposta enxuta com o registro bruto para conferir o mapeamento.
   if (debug) {
@@ -56,7 +73,7 @@ export async function GET(req: NextRequest) {
     const resultado =
       fonte === "mf"
         ? await listarMovimentosReceber(cred, { dataDe, dataAte, debug })
-        : await listarContasReceber(cred, { dataDe, dataAte, debug });
+        : await listarContasReceber(cred, { dataDe, dataAte, emissaoMin, emissaoMax, debug, maxPaginas: 120 });
     return NextResponse.json({
       ok: true,
       emitidoEm: new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),
