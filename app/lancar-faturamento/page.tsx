@@ -8,7 +8,7 @@ import { formatarMoeda } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { SeletorMes } from "@/components/SeletorMes";
 
-// Campo de moeda editável (pt-BR) com salvamento ao sair/Enter.
+// Campo de moeda: exibe em pt-BR (1.234,56) e fica editável ao focar.
 function CampoMoeda({
   valor,
   onSalvar,
@@ -16,28 +16,36 @@ function CampoMoeda({
   valor: number;
   onSalvar: (n: number) => void;
 }) {
-  const [texto, setTexto] = useState<string | null>(null);
+  const [edit, setEdit] = useState<string | null>(null);
 
-  const exibicao = texto ?? (valor ? valor.toString().replace(".", ",") : "");
+  const formatado = valor
+    ? valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "";
 
   function salvar() {
-    if (texto === null) return;
-    const n = parseFloat(texto.replace(/\./g, "").replace(",", "."));
-    onSalvar(isNaN(n) ? 0 : n);
-    setTexto(null);
+    if (edit !== null) {
+      const n = parseFloat(edit.replace(/\./g, "").replace(",", "."));
+      onSalvar(isNaN(n) ? 0 : n);
+    }
+    setEdit(null);
   }
 
   return (
     <input
-      value={exibicao}
-      onChange={(e) => setTexto(e.target.value)}
+      value={edit ?? formatado}
+      onFocus={(e) => {
+        setEdit(valor ? String(valor).replace(".", ",") : "");
+        const el = e.target;
+        requestAnimationFrame(() => el.select());
+      }}
+      onChange={(e) => setEdit(e.target.value)}
       onBlur={salvar}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
       }}
       placeholder="0,00"
       inputMode="decimal"
-      className="w-40 rounded-md border border-slate-300 px-3 py-1.5 text-right text-sm tabular-nums focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+      className="w-44 rounded-md border border-slate-300 px-3 py-1.5 text-right text-sm tabular-nums focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
     />
   );
 }
@@ -93,46 +101,49 @@ export default function LancarFaturamentoPage() {
             As alterações são salvas automaticamente neste navegador.
           </span>
         </div>
-        <div className="overflow-x-auto">
+        <div className="max-h-[65vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50">
+              <tr className="border-b border-slate-200 text-left text-slate-500">
                 <th className="px-5 py-3 font-medium">Competência</th>
-                <th className="px-5 py-3 text-right font-medium">Faturamento do mês (R$)</th>
-                <th className="px-5 py-3 text-right font-medium">Vendas PF (R$)</th>
+                <th className="px-3 py-3 text-right font-medium">Faturamento do mês (R$)</th>
+                <th className="px-3 py-3 text-right font-medium">Vendas PF (R$)</th>
+                <th className="w-full" />
               </tr>
             </thead>
             <tbody>
               {meses.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-5 py-8 text-center text-slate-400">
+                  <td colSpan={4} className="px-5 py-8 text-center text-slate-400">
                     Nenhuma competência lançada. Use “Adicionar mês” para começar.
                   </td>
                 </tr>
               )}
               {meses.map((m) => (
                 <tr key={m} className="border-b border-slate-100 last:border-0">
-                  <td className="px-5 py-3 font-medium capitalize text-slate-700">
+                  <td className="whitespace-nowrap px-5 py-2 font-medium capitalize text-slate-700">
                     {rotuloMesAno(m)}
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-3 py-2 text-right">
                     <CampoMoeda
                       valor={faturamento[m] ?? 0}
                       onSalvar={(n) => setFaturamentoMes(m, n)}
                     />
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-3 py-2 text-right">
                     <CampoMoeda valor={vendasPF[m] ?? 0} onSalvar={(n) => setVendasPFMes(m, n)} />
                   </td>
+                  <td className="w-full" />
                 </tr>
               ))}
             </tbody>
             {meses.length > 0 && (
-              <tfoot>
-                <tr className="bg-slate-50 font-semibold text-slate-800">
+              <tfoot className="sticky bottom-0 bg-slate-50">
+                <tr className="border-t border-slate-200 font-semibold text-slate-800">
                   <td className="px-5 py-3">Total</td>
-                  <td className="px-5 py-3 text-right tabular-nums">{formatarMoeda(totalFat)}</td>
-                  <td className="px-5 py-3 text-right tabular-nums">{formatarMoeda(totalPF)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(totalFat)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(totalPF)}</td>
+                  <td className="w-full" />
                 </tr>
               </tfoot>
             )}
