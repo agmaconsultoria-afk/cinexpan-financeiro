@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   FileSpreadsheet,
   Database,
@@ -9,13 +9,24 @@ import {
   Pencil,
   Check,
   Cloud,
+  X,
 } from "lucide-react";
 import { useRastreio } from "@/lib/rastreio/context";
-import { montarDemonstrativo, rotuloMesAno } from "@/lib/rastreio/logic";
-import { formatarMoeda, formatarPercent } from "@/lib/format";
+import { montarDemonstrativo, rotuloMesAno, rotuloMesExtenso } from "@/lib/rastreio/logic";
+import { formatarMoeda, formatarPercent, formatarData } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { SeletorMes } from "@/components/SeletorMes";
-import { Visao } from "@/lib/rastreio/types";
+import { ContaDerivada, Visao } from "@/lib/rastreio/types";
+
+type Coluna = "falta" | "recebido" | "descontos" | "juros" | "atrasado";
+
+const TITULO_COLUNA: Record<Coluna, string> = {
+  falta: "Ainda Falta Receber",
+  recebido: "Já Recebido",
+  descontos: "Descontos Concedidos",
+  juros: "Multa/Juros",
+  atrasado: "Atrasado",
+};
 
 function ValorEditavel({
   valor,
@@ -90,6 +101,8 @@ export default function RastreioFaturamentoPage() {
   const [sincronizando, setSincronizando] = useState(false);
   // Mês a sincronizar do Omie (independente do que já está carregado).
   const [mesOmie, setMesOmie] = useState(() => new Date().toISOString().slice(0, 7));
+  // Drill-down: célula clicada (coluna + mês; mês null = total da competência).
+  const [detalhe, setDetalhe] = useState<{ col: Coluna; mes: string | null } | null>(null);
 
   const pf = vendasPF[competencia] ?? 0;
   const dem = useMemo(
@@ -98,6 +111,38 @@ export default function RastreioFaturamentoPage() {
         ? montarDemonstrativo(contas, competencia, visao, faturamento, pf)
         : null,
     [contas, competencia, visao, faturamento, pf]
+  );
+
+  // Valor de uma conta para uma coluna (respeita a visão).
+  const valorDe = useCallback(
+    (c: ContaDerivada, col: Coluna): number => {
+      switch (col) {
+        case "falta":
+          return visao === "Vencimento" ? c.valorFaturado : c.valorAReceber;
+        case "recebido":
+          return c.valorRecebidoCalc;
+        case "descontos":
+          return c.descontoCalc;
+        case "juros":
+          return c.jurosMulta;
+        case "atrasado":
+          return c.atraso;
+      }
+    },
+    [visao]
+  );
+
+  // Lançamentos que compõem uma célula (coluna + mês; mês null = competência toda).
+  const contasDaCelula = useCallback(
+    (col: Coluna, mes: string | null): ContaDerivada[] =>
+      contas.filter(
+        (c) =>
+          c.competencia === competencia &&
+          (mes == null ||
+            (visao === "Vencimento" ? c.mesVencimento : c.mesRecebimento) === mes) &&
+          Math.abs(valorDe(c, col)) > 0.005
+      ),
+    [contas, competencia, visao, valorDe]
   );
 
   async function sincronizarOmie() {
@@ -140,6 +185,30 @@ export default function RastreioFaturamentoPage() {
 
   const colLabel =
     visao === "Vencimento" ? "Mês de Vencimento" : "Mês Previsto de Recebimento";
+
+  // Célula clicável da tabela (abre o detalhe daquele mês + coluna).
+  function celulaTd(valor: number, col: Coluna, mes: string, cor = "") {
+    if (Math.abs(valor) < 0.005) {
+      return <td className="px-4 py-2.5 text-right text-slate-300">-</td>;
+    }
+    return (
+      <td className="px-4 py-2.5 text-right">
+        <button
+          onClick={() => setDetalhe({ col, mes })}
+          className={`rounded px-1 underline-offset-2 hover:bg-brand-50 hover:underline ${cor}`}
+          title="Clique para ver os lançamentos"
+        >
+          {formatarMoeda(valor)}
+        </button>
+      </td>
+    );
+  }
+
+  // Dados do detalhe (drill-down) em aberto.
+  const detContas = detalhe ? contasDaCelula(detalhe.col, detalhe.mes) : [];
+  const detTotal = detalhe
+    ? detContas.reduce((a, c) => a + valorDe(c, detalhe.col), 0)
+    : 0;
 
   return (
     <div>
@@ -248,19 +317,24 @@ export default function RastreioFaturamentoPage() {
 
           {/* Cards de totais (cabeçalho do demonstrativo) */}
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {[
-              { l: "Ainda Falta Receber", v: dem.totais.aindaFaltaReceber, c: "text-slate-900" },
-              { l: "Já Recebido", v: dem.totais.jaRecebido, c: "text-emerald-600" },
-              { l: "Descontos Concedidos", v: dem.totais.descontos, c: "text-rose-600" },
-              { l: "Multa/Juros", v: dem.totais.multaJuros, c: "text-slate-900" },
-              { l: "Atrasado", v: dem.totais.atrasado, c: "text-rose-600" },
-            ].map((k) => (
-              <div key={k.l} className="card card-pad">
-                <div className="text-xs font-medium text-slate-500">{k.l}</div>
+            {([
+              { col: "falta" as Coluna, v: dem.totais.aindaFaltaReceber, c: "text-slate-900" },
+              { col: "recebido" as Coluna, v: dem.totais.jaRecebido, c: "text-emerald-600" },
+              { col: "descontos" as Coluna, v: dem.totais.descontos, c: "text-rose-600" },
+              { col: "juros" as Coluna, v: dem.totais.multaJuros, c: "text-slate-900" },
+              { col: "atrasado" as Coluna, v: dem.totais.atrasado, c: "text-rose-600" },
+            ]).map((k) => (
+              <button
+                key={k.col}
+                onClick={() => setDetalhe({ col: k.col, mes: null })}
+                className="card card-pad text-left transition-shadow hover:shadow-md"
+                title="Clique para ver os lançamentos"
+              >
+                <div className="text-xs font-medium text-slate-500">{TITULO_COLUNA[k.col]}</div>
                 <div className={`mt-1 text-lg font-bold tabular-nums ${k.c}`}>
                   {formatarMoeda(k.v)}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -289,13 +363,11 @@ export default function RastreioFaturamentoPage() {
                       <td className="px-4 py-2.5 text-left font-medium capitalize text-slate-700">
                         {l.rotulo}
                       </td>
-                      <td className="px-4 py-2.5 text-right">{cell(l.aindaFaltaReceber)}</td>
-                      <td className="px-4 py-2.5 text-right text-emerald-700">
-                        {cell(l.jaRecebido)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-rose-600">{cell(l.descontos)}</td>
-                      <td className="px-4 py-2.5 text-right">{cell(l.multaJuros)}</td>
-                      <td className="px-4 py-2.5 text-right text-rose-600">{cell(l.atrasado)}</td>
+                      {celulaTd(l.aindaFaltaReceber, "falta", l.mes)}
+                      {celulaTd(l.jaRecebido, "recebido", l.mes, "text-emerald-700")}
+                      {celulaTd(l.descontos, "descontos", l.mes, "text-rose-600")}
+                      {celulaTd(l.multaJuros, "juros", l.mes)}
+                      {celulaTd(l.atrasado, "atrasado", l.mes, "text-rose-600")}
                     </tr>
                   ))}
                 </tbody>
@@ -377,8 +449,11 @@ export default function RastreioFaturamentoPage() {
               </p>
               <ul className="mt-3 space-y-1.5 text-sm text-slate-600">
                 <li>
-                  • <strong>Atualizar BD:</strong> importe o relatório de Contas a Receber do Omie
-                  (.xlsx).
+                  • <strong>Sincronizar Omie:</strong> traz as contas a receber do mês escolhido.
+                </li>
+                <li>
+                  • <strong>Clique em qualquer valor</strong> (cards ou tabela) para ver os
+                  lançamentos que o compõem.
                 </li>
                 <li>
                   • <strong>Faturamento do mês</strong> e <strong>Vendas PF</strong> são editáveis
@@ -392,11 +467,95 @@ export default function RastreioFaturamentoPage() {
           </div>
         </>
       )}
+
+      {/* Modal de detalhe (drill-down dos lançamentos) */}
+      {detalhe && (
+        <div
+          className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setDetalhe(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {TITULO_COLUNA[detalhe.col]} — {rotuloMesAno(competencia)}
+                </h3>
+                <p className="text-sm text-slate-500">
+                  {detalhe.mes
+                    ? `${colLabel}: ${rotuloMesExtenso(detalhe.mes)} · `
+                    : "Todos os meses · "}
+                  {detContas.length} lançamento(s) · Total {formatarMoeda(detTotal)}
+                </p>
+              </div>
+              <button
+                onClick={() => setDetalhe(null)}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-slate-50">
+                  <tr className="text-left text-slate-500">
+                    <th className="px-4 py-2.5 font-medium">Cliente</th>
+                    <th className="px-4 py-2.5 font-medium">NF</th>
+                    <th className="px-4 py-2.5 font-medium">Parcela</th>
+                    <th className="px-4 py-2.5 font-medium">Situação</th>
+                    <th className="px-4 py-2.5 font-medium">Vencimento</th>
+                    <th className="px-4 py-2.5 font-medium">Recebimento</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detContas.map((c, i) => (
+                    <tr key={`${c.codigoOmie ?? i}`} className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-slate-700">{c.cliente || "—"}</td>
+                      <td className="px-4 py-2 text-slate-600">{c.notaFiscal || "—"}</td>
+                      <td className="px-4 py-2 text-slate-600">{c.parcela || "—"}</td>
+                      <td className="px-4 py-2 text-slate-600">{c.situacao || "—"}</td>
+                      <td className="px-4 py-2 text-slate-600">
+                        {c.vencimento ? formatarData(c.vencimento) : "—"}
+                      </td>
+                      <td className="px-4 py-2 text-slate-600">
+                        {c.ultimoRecebimento
+                          ? formatarData(c.ultimoRecebimento)
+                          : c.previsaoRecebimento
+                          ? formatarData(c.previsaoRecebimento)
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {formatarMoeda(valorDe(c, detalhe.col))}
+                      </td>
+                    </tr>
+                  ))}
+                  {detContas.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                        Nenhum lançamento.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot className="sticky bottom-0 bg-slate-50">
+                  <tr className="border-t border-slate-200 font-semibold text-slate-800">
+                    <td className="px-4 py-2.5" colSpan={6}>
+                      Total ({detContas.length})
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {formatarMoeda(detTotal)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
-
-// Exibe "-" para zero, como na planilha original.
-function cell(v: number): string {
-  return Math.abs(v) < 0.005 ? "-" : formatarMoeda(v);
 }
