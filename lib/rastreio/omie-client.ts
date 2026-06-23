@@ -384,35 +384,15 @@ async function mapaClientes(
 }
 
 /**
- * Resolve os nomes dos clientes nas contas (o ListarContasReceber só traz o
- * código). Usa o cache da base; se faltar e o cache estiver vazio/antigo,
- * busca a lista de clientes e atualiza o cache. Fallback: CNPJ ou #código.
+ * Resolve os nomes dos clientes nas contas usando APENAS o cache da base
+ * (rápido, não chama o Omie). Sem nome no cache → fallback CNPJ ou #código.
+ * A carga do cadastro de clientes é feita à parte por atualizarCacheClientes().
  */
 export async function resolverClientes(
-  cred: OmieCredenciais,
+  _cred: OmieCredenciais,
   contas: ContaReceber[]
 ): Promise<number> {
-  const { map, atualizadoEm } = getClientes();
-  let cache = map;
-
-  const necessarios = new Set(
-    contas.filter((c) => !c.cliente && c.clienteCodigo).map((c) => c.clienteCodigo as string)
-  );
-  const faltando = [...necessarios].filter((cod) => !cache[cod]);
-  const velho = !atualizadoEm || Date.now() - Date.parse(atualizadoEm) > 6 * 3600 * 1000;
-
-  if (faltando.length > 0 && (Object.keys(cache).length === 0 || velho)) {
-    try {
-      const novos = await mapaClientes(cred);
-      if (Object.keys(novos).length > 0) {
-        mergeClientes(novos);
-        cache = { ...cache, ...novos };
-      }
-    } catch {
-      /* segue com fallback */
-    }
-  }
-
+  const { map: cache } = getClientes();
   let resolvidos = 0;
   for (const c of contas) {
     if (c.cliente) {
@@ -430,6 +410,18 @@ export async function resolverClientes(
     }
   }
   return resolvidos;
+}
+
+/**
+ * Carga (uma vez) do cadastro de clientes do Omie para o cache. Pode demorar
+ * em bases grandes; roda sob demanda (botão "Atualizar clientes").
+ */
+export async function atualizarCacheClientes(
+  cred: OmieCredenciais
+): Promise<{ total: number }> {
+  const mapa = await mapaClientes(cred, 600);
+  if (Object.keys(mapa).length > 0) mergeClientes(mapa);
+  return { total: Object.keys(mapa).length };
 }
 
 // Nomes candidatos para o filtro de data do mfListarRequest (descobertos em

@@ -128,3 +128,21 @@ export function mergeClientes(novos: Record<string, string>): void {
   s.clientesAtualizadoEm = new Date().toISOString();
   escrever(s);
 }
+
+/** Reaplica os nomes de clientes do cache em todo o histórico já gravado. */
+export function reaplicarNomesClientes(): number {
+  const s = ler();
+  const cache = s.clientes ?? {};
+  let n = 0;
+  for (const comp of Object.values(s.competencias)) {
+    for (const c of comp.contas) {
+      const cod = c.clienteCodigo;
+      if (cod && cache[cod] && c.cliente !== cache[cod]) {
+        c.cliente = cache[cod];
+        n++;
+      }
+    }
+  }
+  if (n > 0) escrever(s);
+  return n;
+}

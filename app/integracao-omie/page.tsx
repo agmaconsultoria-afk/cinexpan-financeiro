@@ -7,6 +7,29 @@ import { PageHeader } from "@/components/ui";
 export default function IntegracaoOmiePage() {
   const [testando, setTestando] = useState(false);
   const [resultado, setResultado] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [clientesMsg, setClientesMsg] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [carregandoClientes, setCarregandoClientes] = useState(false);
+
+  async function atualizarClientes() {
+    setCarregandoClientes(true);
+    setClientesMsg(null);
+    try {
+      const resp = await fetch("/api/rastreio/clientes", { method: "POST" });
+      const dados = await resp.json();
+      if (dados.ok) {
+        setClientesMsg({
+          ok: true,
+          msg: `Cadastro de clientes atualizado: ${dados.total} clientes · ${dados.atualizados} lançamentos com nome preenchido.`,
+        });
+      } else {
+        setClientesMsg({ ok: false, msg: dados.erro ?? "Falha ao atualizar clientes." });
+      }
+    } catch {
+      setClientesMsg({ ok: false, msg: "Falha de conexão com o servidor." });
+    } finally {
+      setCarregandoClientes(false);
+    }
+  }
 
   async function testarConexao() {
     setTestando(true);
@@ -103,6 +126,39 @@ OMIE_APP_SECRET=seu_app_secret`}
             <span>{resultado.msg}</span>
           </div>
         )}
+
+        <div className="mt-6 border-t border-slate-200 pt-5">
+          <h4 className="text-sm font-semibold text-slate-800">Cadastro de clientes</h4>
+          <p className="mt-1 text-sm text-slate-500">
+            O Rastreio traz o código do cliente; esta carga (feita uma vez) baixa o cadastro de
+            clientes do Omie para exibir os <strong>nomes</strong> no detalhamento. Pode levar
+            alguns minutos em bases grandes; depois fica em cache.
+          </p>
+          <button
+            onClick={atualizarClientes}
+            disabled={carregandoClientes}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${carregandoClientes ? "animate-spin" : ""}`} />
+            {carregandoClientes ? "Atualizando clientes…" : "Atualizar cadastro de clientes"}
+          </button>
+          {clientesMsg && (
+            <div
+              className={`mt-3 flex items-start gap-2 rounded-lg border p-3 text-sm ${
+                clientesMsg.ok
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-rose-200 bg-rose-50 text-rose-800"
+              }`}
+            >
+              {clientesMsg.ok ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+              <span>{clientesMsg.msg}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Segurança / detalhes */}
