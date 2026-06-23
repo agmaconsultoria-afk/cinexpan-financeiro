@@ -8,7 +8,7 @@ import {
   TrendingUp,
   FileSpreadsheet,
   FileText,
-  Upload,
+  PencilLine,
   Plug,
   Radar,
 } from "lucide-react";
@@ -16,10 +16,10 @@ import {
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/rastreio-faturamento", label: "Rastreio de Faturamento", icon: Radar },
+  { href: "/lancar-faturamento", label: "Lançar Faturamento", icon: PencilLine },
   { href: "/fluxo-caixa", label: "Fluxo de Caixa", icon: TrendingUp },
   { href: "/dre", label: "DRE", icon: FileSpreadsheet },
   { href: "/relatorios", label: "Relatórios", icon: FileText },
-  { href: "/importar", label: "Importar Planilha", icon: Upload },
   { href: "/integracao-omie", label: "Integração Omie", icon: Plug },
 ];
 

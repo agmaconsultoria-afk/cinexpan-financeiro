@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  RefreshCw,
   FileSpreadsheet,
   Database,
   Printer,
@@ -13,7 +12,6 @@ import {
 } from "lucide-react";
 import { useRastreio } from "@/lib/rastreio/context";
 import { montarDemonstrativo, rotuloMesAno } from "@/lib/rastreio/logic";
-import { importarBD } from "@/lib/rastreio/import";
 import { formatarMoeda, formatarPercent } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { Visao } from "@/lib/rastreio/types";
@@ -87,9 +85,7 @@ export default function RastreioFaturamentoPage() {
     voltarParaExemplo,
   } = useRastreio();
 
-  const inputRef = useRef<HTMLInputElement>(null);
   const [aviso, setAviso] = useState<string | null>(null);
-  const [importando, setImportando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   // Mês a sincronizar do Omie (independente do que já está carregado).
   const [mesOmie, setMesOmie] = useState(() => new Date().toISOString().slice(0, 7));
@@ -102,29 +98,6 @@ export default function RastreioFaturamentoPage() {
         : null,
     [contas, competencia, visao, faturamento, pf]
   );
-
-  async function atualizarBD(arquivo: File) {
-    setImportando(true);
-    setAviso(null);
-    try {
-      const buffer = await arquivo.arrayBuffer();
-      const res = importarBD(buffer);
-      if (res.contas.length === 0) {
-        setAviso(res.avisos.join(" ") || "Nenhuma conta importada.");
-      } else {
-        importarContas(res.contas, res.emitidoEm);
-        setAviso(
-          `${res.contas.length} contas importadas com sucesso${
-            res.emitidoEm ? ` (emitido em ${res.emitidoEm})` : ""
-          }.`
-        );
-      }
-    } catch {
-      setAviso("Falha ao ler o arquivo. Use o relatório de Contas a Receber (.xlsx).");
-    } finally {
-      setImportando(false);
-    }
-  }
 
   async function sincronizarOmie() {
     setSincronizando(true);
@@ -175,17 +148,6 @@ export default function RastreioFaturamentoPage() {
         acoes={
           <div className="no-print flex flex-wrap items-center gap-2">
             <input
-              ref={inputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) atualizarBD(f);
-                e.target.value = "";
-              }}
-            />
-            <input
               type="month"
               value={mesOmie}
               onChange={(e) => setMesOmie(e.target.value)}
@@ -200,14 +162,6 @@ export default function RastreioFaturamentoPage() {
             >
               <Cloud className={`h-4 w-4 ${sincronizando ? "animate-pulse" : ""}`} />
               {sincronizando ? "Sincronizando…" : "Sincronizar Omie"}
-            </button>
-            <button
-              onClick={() => inputRef.current?.click()}
-              disabled={importando}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              <RefreshCw className={`h-4 w-4 ${importando ? "animate-spin" : ""}`} />
-              Atualizar BD
             </button>
             <button
               onClick={() => window.print()}
@@ -228,7 +182,7 @@ export default function RastreioFaturamentoPage() {
         >
           {fonte === "bd" ? (
             <>
-              <FileSpreadsheet className="h-3.5 w-3.5" /> BD importado
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Dados do Omie
             </>
           ) : (
             <>
