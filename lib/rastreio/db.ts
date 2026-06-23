@@ -45,6 +45,8 @@ function ler(): Store {
       competencias: s.competencias ?? {},
       faturamento: s.faturamento ?? { ...FATURAMENTO_SEED },
       vendasPF: s.vendasPF ?? { ...VENDAS_PF_SEED },
+      clientes: s.clientes ?? {},
+      clientesAtualizadoEm: s.clientesAtualizadoEm,
     };
   } catch {
     return storeVazio();
