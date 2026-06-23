@@ -495,9 +495,6 @@ export async function listarContasReceber(
       pagina,
       registros_por_pagina: registrosPorPagina,
       apenas_importado_api: "N",
-      // Traz os mais recentes primeiro (reduz risco de cortar no limite de páginas)
-      ordenar_por: "CODIGO",
-      ordem_decrescente: "S",
     };
     if (opcoes.dataDe) param.filtrar_por_data_de = opcoes.dataDe;
     if (opcoes.dataAte) param.filtrar_por_data_ate = opcoes.dataAte;
