@@ -105,57 +105,56 @@ if ($psql) {
 }
 
 # ---------------------------------------------------------------------------
-# 3) Banco e usuário da aplicação
+# 3 e 4) Banco, usuário e .env.local
+# Se o .env.local já existe, o banco e a configuração já foram feitos numa
+# execução anterior — pulamos tudo (re-execução segura, sem repetir senhas).
 # ---------------------------------------------------------------------------
-Passo "3/8  Banco de dados e usuário"
-if (-not $senhaSuper) {
-  $senhaSuper = Read-Host "Senha do administrador do PostgreSQL (usuário 'postgres')" -AsSecureString
-  $senhaSuperTxt = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($senhaSuper))
-}
-
-$senhaApp = Read-Host "Defina a SENHA do usuário da aplicação ('$DbUsuario')" -AsSecureString
-$senhaAppTxt = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-  [Runtime.InteropServices.Marshal]::SecureStringToBSTR($senhaApp))
-
-$env:PGPASSWORD = $senhaSuperTxt
-$psqlDir = Split-Path -Parent $psql
-
-# Cria o usuário (role) se não existir
-$existeRole = & $psql -U postgres -h localhost -tAc `
-  "SELECT 1 FROM pg_roles WHERE rolname='$DbUsuario'"
-if ($existeRole -ne "1") {
-  & $psql -U postgres -h localhost -c `
-    "CREATE ROLE $DbUsuario LOGIN PASSWORD '$senhaAppTxt';"
-  Info "Usuário '$DbUsuario' criado."
-} else {
-  & $psql -U postgres -h localhost -c `
-    "ALTER ROLE $DbUsuario LOGIN PASSWORD '$senhaAppTxt';"
-  Info "Usuário '$DbUsuario' já existia (senha atualizada)."
-}
-
-# Cria o banco se não existir
-$existeDb = & $psql -U postgres -h localhost -tAc `
-  "SELECT 1 FROM pg_database WHERE datname='$DbNome'"
-if ($existeDb -ne "1") {
-  & $psql -U postgres -h localhost -c `
-    "CREATE DATABASE $DbNome OWNER $DbUsuario;"
-  Info "Banco '$DbNome' criado."
-} else {
-  Info "Banco '$DbNome' já existia."
-}
-$env:PGPASSWORD = $null
-
-# ---------------------------------------------------------------------------
-# 4) .env.local
-# ---------------------------------------------------------------------------
-Passo "4/8  Arquivo de configuração (.env.local)"
 $envPath = Join-Path $RaizApp ".env.local"
-$databaseUrl = "postgresql://${DbUsuario}:${senhaAppTxt}@localhost:5432/${DbNome}"
 
 if (Test-Path $envPath) {
-  Aviso ".env.local já existe — não foi sobrescrito. (Confira DATABASE_URL e as chaves do Omie.)"
+  Passo "3-4/8  Banco e configuração (já existentes)"
+  Info ".env.local já existe — banco e configuração já estavam prontos. Pulando."
 } else {
+  Passo "3/8  Banco de dados e usuário"
+  if (-not $senhaSuper) {
+    $senhaSuper = Read-Host "Senha do administrador do PostgreSQL (usuário 'postgres')" -AsSecureString
+    $senhaSuperTxt = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+      [Runtime.InteropServices.Marshal]::SecureStringToBSTR($senhaSuper))
+  }
+
+  $senhaApp = Read-Host "Defina a SENHA do usuário da aplicação ('$DbUsuario')" -AsSecureString
+  $senhaAppTxt = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($senhaApp))
+
+  $env:PGPASSWORD = $senhaSuperTxt
+
+  # Cria o usuário (role) se não existir
+  $existeRole = & $psql -U postgres -h localhost -tAc `
+    "SELECT 1 FROM pg_roles WHERE rolname='$DbUsuario'"
+  if ($existeRole -ne "1") {
+    & $psql -U postgres -h localhost -c `
+      "CREATE ROLE $DbUsuario LOGIN PASSWORD '$senhaAppTxt';"
+    Info "Usuário '$DbUsuario' criado."
+  } else {
+    & $psql -U postgres -h localhost -c `
+      "ALTER ROLE $DbUsuario LOGIN PASSWORD '$senhaAppTxt';"
+    Info "Usuário '$DbUsuario' já existia (senha atualizada)."
+  }
+
+  # Cria o banco se não existir
+  $existeDb = & $psql -U postgres -h localhost -tAc `
+    "SELECT 1 FROM pg_database WHERE datname='$DbNome'"
+  if ($existeDb -ne "1") {
+    & $psql -U postgres -h localhost -c `
+      "CREATE DATABASE $DbNome OWNER $DbUsuario;"
+    Info "Banco '$DbNome' criado."
+  } else {
+    Info "Banco '$DbNome' já existia."
+  }
+  $env:PGPASSWORD = $null
+
+  Passo "4/8  Arquivo de configuração (.env.local)"
+  $databaseUrl = "postgresql://${DbUsuario}:${senhaAppTxt}@localhost:5432/${DbNome}"
   $omieKey    = Read-Host "OMIE_APP_KEY (App Key do Omie)"
   $omieSecret = Read-Host "OMIE_APP_SECRET (App Secret do Omie)"
   @"
@@ -171,8 +170,33 @@ DATABASE_URL=$databaseUrl
 # 5) Dependências + build
 # ---------------------------------------------------------------------------
 Passo "5/8  Instalando dependências e compilando (pode levar alguns minutos)"
-& npm install
-if ($LASTEXITCODE -ne 0) { throw "Falha no 'npm install'." }
+
+# Remove node_modules parcial/travado de tentativas anteriores
+$nm = Join-Path $RaizApp "node_modules"
+if (Test-Path $nm) {
+  Aviso "Limpando node_modules de tentativa anterior..."
+  Remove-Item -Recurse -Force $nm -ErrorAction SilentlyContinue
+}
+
+# Deixa o npm resistente a quedas de conexão (firewall corporativo)
+& npm config set fetch-retries 5 | Out-Null
+& npm config set fetch-retry-mintimeout 20000 | Out-Null
+& npm config set fetch-retry-maxtimeout 120000 | Out-Null
+& npm config set fetch-timeout 600000 | Out-Null
+
+# Tenta o npm install várias vezes (a rede pode cair no meio do download)
+$instalou = $false
+for ($t = 1; $t -le 4; $t++) {
+  Aviso "npm install (tentativa $t de 4)..."
+  & npm install --no-audit --no-fund
+  if ($LASTEXITCODE -eq 0) { $instalou = $true; break }
+  Aviso "Falhou (provavel queda de rede). Nova tentativa em 8s..."
+  Start-Sleep -Seconds 8
+}
+if (-not $instalou) {
+  throw "Falha no 'npm install' apos varias tentativas. Verifique a conexao/proxy do servidor com registry.npmjs.org e rode o instalador de novo."
+}
+
 & npm run build
 if ($LASTEXITCODE -ne 0) { throw "Falha no 'npm run build'." }
 Info "Aplicação compilada."
