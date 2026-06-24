@@ -1,12 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { DataProvider } from "@/lib/data-context";
 import { RastreioProvider } from "@/lib/rastreio/context";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Portal Financeiro Cinexpan",
@@ -18,7 +15,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR">
-      <body className={`${inter.variable} font-sans`}>
+      <body className="font-sans">
         <DataProvider>
           <RastreioProvider>
           <div className="flex min-h-screen">
