@@ -8,6 +8,10 @@
  * Endpoint base: https://app.omie.com.br/api/v1
  * Recurso: financas/contareceber/  (método ListarContasReceber)
  */
+import { execSync } from "child_process";
+import { writeFileSync, unlinkSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import { ContaReceber } from "./types";
 import { mesDe } from "./logic";
 import { getClientes, mergeClientes } from "./db";
@@ -33,6 +37,40 @@ interface OmieErro {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function fetchOmieWin(url: string, bodyObj: object): { status: number; text: string } {
+  const id = Date.now().toString(36);
+  const bodyFilePath = join(tmpdir(), `omie-b-${id}.json`);
+  const scriptFilePath = join(tmpdir(), `omie-s-${id}.ps1`);
+  const bodyFilePs = bodyFilePath.replace(/\\/g, "/");
+  const script = [
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+    "$ErrorActionPreference = 'Stop'",
+    `$body = [System.IO.File]::ReadAllText('${bodyFilePs}', [System.Text.Encoding]::UTF8)`,
+    `$resp = Invoke-WebRequest -Uri '${url}' -Method POST -Body $body -ContentType 'application/json; charset=utf-8' -UseBasicParsing`,
+    "Write-Output $resp.StatusCode",
+    "Write-Output $resp.Content",
+  ].join("\r\n");
+  try {
+    writeFileSync(bodyFilePath, JSON.stringify(bodyObj), "utf8");
+    writeFileSync(scriptFilePath, script, "utf8");
+    const out = execSync(
+      `powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -File "${scriptFilePath}"`,
+      { encoding: "utf8", timeout: 90000 }
+    );
+    const nl = out.indexOf("\n");
+    if (nl < 0) throw new Error(`Resposta inesperada do PowerShell: ${out.slice(0, 100)}`);
+    const status = parseInt(out.slice(0, nl).trim(), 10) || 200;
+    const text = out.slice(nl + 1).trim();
+    return { status, text };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Omie (PS): ${msg.slice(0, 400)}`);
+  } finally {
+    try { unlinkSync(bodyFilePath); } catch {} // eslint-disable-line no-empty
+    try { unlinkSync(scriptFilePath); } catch {} // eslint-disable-line no-empty
+  }
+}
+
 /**
  * Executa uma chamada JSON-RPC genérica ao Omie.
  * Trata o bloqueio "Consumo redundante" (proteção anti-duplicação do Omie):
@@ -45,24 +83,30 @@ export async function callOmie<T = unknown>(
   param: Record<string, unknown>,
   tentativasRestantes = 2
 ): Promise<T> {
-  const resp = await fetch(`${OMIE_BASE}/${recurso}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      call,
-      app_key: cred.appKey,
-      app_secret: cred.appSecret,
-      param: [param],
-    }),
-    cache: "no-store",
-  });
+  const url = `${OMIE_BASE}/${recurso}`;
+  const bodyObj = { call, app_key: cred.appKey, app_secret: cred.appSecret, param: [param] };
+  let status: number;
+  let texto: string;
+  if (process.platform === "win32") {
+    const r = fetchOmieWin(url, bodyObj);
+    status = r.status;
+    texto = r.text;
+  } else {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bodyObj),
+      cache: "no-store",
+    });
+    status = resp.status;
+    texto = await resp.text();
+  }
 
-  const texto = await resp.text();
   let json: unknown;
   try {
     json = JSON.parse(texto);
   } catch {
-    throw new Error(`Resposta inválida do Omie (HTTP ${resp.status}): ${texto.slice(0, 200)}`);
+    throw new Error(`Resposta inválida do Omie (HTTP ${status}): ${texto.slice(0, 200)}`);
   }
 
   const erro = json as OmieErro;
@@ -77,8 +121,8 @@ export async function callOmie<T = unknown>(
     }
     throw new Error(`Omie: ${fs}`);
   }
-  if (!resp.ok) {
-    throw new Error(`Omie respondeu HTTP ${resp.status}`);
+  if (status < 200 || status >= 300) {
+    throw new Error(`Omie respondeu HTTP ${status}`);
   }
   return json as T;
 }
