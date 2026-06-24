@@ -46,9 +46,18 @@ function fetchOmieWin(url: string, bodyObj: object): { status: number; text: str
     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
     "$ErrorActionPreference = 'Stop'",
     `$body = [System.IO.File]::ReadAllText('${bodyFilePs}', [System.Text.Encoding]::UTF8)`,
-    `$resp = Invoke-WebRequest -Uri '${url}' -Method POST -Body $body -ContentType 'application/json; charset=utf-8' -UseBasicParsing`,
-    "Write-Output $resp.StatusCode",
-    "Write-Output $resp.Content",
+    "try {",
+    `  $resp = Invoke-WebRequest -Uri '${url}' -Method POST -Body $body -ContentType 'application/json; charset=utf-8' -UseBasicParsing`,
+    "  Write-Output $resp.StatusCode",
+    "  Write-Output $resp.Content",
+    "} catch [System.Net.WebException] {",
+    "  $r = $_.Exception.Response",
+    "  $code = [int]$r.StatusCode",
+    "  $stream = $r.GetResponseStream()",
+    "  $reader = New-Object System.IO.StreamReader($stream)",
+    "  Write-Output $code",
+    "  Write-Output $reader.ReadToEnd()",
+    "}",
   ].join("\r\n");
   try {
     writeFileSync(bodyFilePath, JSON.stringify(bodyObj), "utf8");
