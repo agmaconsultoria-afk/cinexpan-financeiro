@@ -124,6 +124,48 @@ PostgreSQL no caminho):
 
 ---
 
+## Plano B — rede do servidor bloqueia download de pacotes
+
+Em algumas redes corporativas o firewall **corta o download dos pacotes**
+(`npm install` falha com `ECONNRESET`, mesmo trocando de repositório/espelho).
+Nesse caso, leve o `node_modules` e o `.next` **prontos de outro PC** (onde a
+internet funciona) e rode o instalador em modo `-SemBuild` (não baixa nada).
+
+**No PC que TEM internet** (com o mesmo projeto), na pasta do projeto:
+
+```powershell
+git pull
+npm install
+npm run build
+tar -czf $env:USERPROFILE\cinexpan-pronto.tgz node_modules .next
+```
+
+> Use `tar` (já vem no Windows 10/11) — ele lida melhor com as pastas profundas
+> do `node_modules` do que o "Compactar" do Explorer.
+
+**Transfira** o `cinexpan-pronto.tgz` para a pasta do projeto no servidor
+(`C:\Cinexpan\cinexpan-financeiro`) — por área de trabalho remota, pendrive ou
+pasta compartilhada.
+
+**No SERVIDOR**, na pasta do projeto:
+
+```powershell
+git pull
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+Remove-Item -Recurse -Force node_modules,.next -ErrorAction SilentlyContinue
+tar -xzf .\cinexpan-pronto.tgz
+powershell -ExecutionPolicy Bypass -File .\install\instalar.ps1 -SemBuild
+```
+
+> Se o `Remove-Item` reclamar de arquivo travado (`EPERM`), **reinicie o
+> servidor**, reconecte e rode de novo a partir do `Remove-Item` — um
+> `node_modules` parcial de tentativa anterior pode ficar bloqueado.
+
+O `-SemBuild` pula o `npm install`/`build` e usa o que você copiou, indo direto
+para registrar o serviço, liberar a porta no firewall e iniciar o portal.
+
+---
+
 ## Solução de problemas
 
 - **"node não é reconhecido"** logo após instalar: feche e reabra o PowerShell
