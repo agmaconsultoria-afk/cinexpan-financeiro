@@ -47,7 +47,7 @@ function fetchOmieWin(url: string, bodyObj: object): { status: number; text: str
     `$bodyText = [System.IO.File]::ReadAllText('${bodyFilePs}', [System.Text.Encoding]::UTF8)`,
     `$req = [System.Net.WebRequest]::Create('${url}')`,
     "$req.Method = 'POST'",
-    "$req.ContentType = 'application/json; charset=utf-8'",
+    "$req.ContentType = 'application/json'",
     "$bytes = [System.Text.Encoding]::UTF8.GetBytes($bodyText)",
     "$req.ContentLength = $bytes.Length",
     "$ws = $req.GetRequestStream()",
