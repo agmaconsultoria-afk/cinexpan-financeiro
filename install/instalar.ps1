@@ -26,7 +26,8 @@ param(
   [string]$ServiceName = "CinexpanFinanceiro",
   [int]$Porta = 3000,
   [string]$DbNome = "cinexpan_financeiro",
-  [string]$DbUsuario = "cinexpan"
+  [string]$DbUsuario = "cinexpan",
+  [switch]$SemBuild   # pula 'npm install' e 'build' (use quando copiar node_modules + .next prontos do outro PC)
 )
 
 $ErrorActionPreference = "Stop"
@@ -169,37 +170,51 @@ DATABASE_URL=$databaseUrl
 # ---------------------------------------------------------------------------
 # 5) Dependências + build
 # ---------------------------------------------------------------------------
-Passo "5/8  Instalando dependências e compilando (pode levar alguns minutos)"
+if ($SemBuild) {
+  Passo "5/8  Dependências e build (modo -SemBuild: usando o que já está pronto)"
+  if (-not (Test-Path (Join-Path $RaizApp "node_modules"))) {
+    throw "-SemBuild informado, mas a pasta 'node_modules' não existe. Copie node_modules (e .next) do outro PC antes."
+  }
+  if (-not (Test-Path (Join-Path $RaizApp ".next"))) {
+    Aviso ".next não encontrado — vou compilar agora (offline, não usa internet)."
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { throw "Falha no 'npm run build'." }
+  }
+  Info "Dependências/compilação reaproveitadas."
+} else {
+  Passo "5/8  Instalando dependências e compilando (pode levar alguns minutos)"
 
-# Remove node_modules parcial/travado de tentativas anteriores
-$nm = Join-Path $RaizApp "node_modules"
-if (Test-Path $nm) {
-  Aviso "Limpando node_modules de tentativa anterior..."
-  Remove-Item -Recurse -Force $nm -ErrorAction SilentlyContinue
+  # Remove node_modules parcial/travado de tentativas anteriores
+  $nm = Join-Path $RaizApp "node_modules"
+  if (Test-Path $nm) {
+    Aviso "Limpando node_modules de tentativa anterior..."
+    Remove-Item -Recurse -Force $nm -ErrorAction SilentlyContinue
+  }
+
+  # Deixa o npm resistente a quedas de conexão (firewall corporativo)
+  & npm config set fetch-retries 5 | Out-Null
+  & npm config set fetch-retry-mintimeout 20000 | Out-Null
+  & npm config set fetch-retry-maxtimeout 120000 | Out-Null
+  & npm config set fetch-timeout 600000 | Out-Null
+  & npm config set maxsockets 3 | Out-Null
+
+  # Tenta o npm install várias vezes (a rede pode cair no meio do download)
+  $instalou = $false
+  for ($t = 1; $t -le 4; $t++) {
+    Aviso "npm install (tentativa $t de 4)..."
+    & npm install --no-audit --no-fund
+    if ($LASTEXITCODE -eq 0) { $instalou = $true; break }
+    Aviso "Falhou (provavel queda de rede). Nova tentativa em 8s..."
+    Start-Sleep -Seconds 8
+  }
+  if (-not $instalou) {
+    throw "Falha no 'npm install' apos varias tentativas. Veja o plano B no README-INSTALACAO.md (copiar node_modules do outro PC e usar -SemBuild)."
+  }
+
+  & npm run build
+  if ($LASTEXITCODE -ne 0) { throw "Falha no 'npm run build'." }
+  Info "Aplicação compilada."
 }
-
-# Deixa o npm resistente a quedas de conexão (firewall corporativo)
-& npm config set fetch-retries 5 | Out-Null
-& npm config set fetch-retry-mintimeout 20000 | Out-Null
-& npm config set fetch-retry-maxtimeout 120000 | Out-Null
-& npm config set fetch-timeout 600000 | Out-Null
-
-# Tenta o npm install várias vezes (a rede pode cair no meio do download)
-$instalou = $false
-for ($t = 1; $t -le 4; $t++) {
-  Aviso "npm install (tentativa $t de 4)..."
-  & npm install --no-audit --no-fund
-  if ($LASTEXITCODE -eq 0) { $instalou = $true; break }
-  Aviso "Falhou (provavel queda de rede). Nova tentativa em 8s..."
-  Start-Sleep -Seconds 8
-}
-if (-not $instalou) {
-  throw "Falha no 'npm install' apos varias tentativas. Verifique a conexao/proxy do servidor com registry.npmjs.org e rode o instalador de novo."
-}
-
-& npm run build
-if ($LASTEXITCODE -ne 0) { throw "Falha no 'npm run build'." }
-Info "Aplicação compilada."
 
 # ---------------------------------------------------------------------------
 # 6) Serviço do Windows (via NSSM)
