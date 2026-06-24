@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { DataProvider } from "@/lib/data-context";
-import { RastreioProvider } from "@/lib/rastreio/context";
-import { Sidebar } from "@/components/Sidebar";
-import { Topbar } from "@/components/Topbar";
+import { SessionProvider } from "@/components/SessionProvider";
+import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "Portal Financeiro Cinexpan",
@@ -16,17 +14,9 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body className="font-sans">
-        <DataProvider>
-          <RastreioProvider>
-          <div className="flex min-h-screen">
-            <Sidebar />
-            <div className="flex flex-1 flex-col lg:pl-64">
-              <Topbar />
-              <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
-            </div>
-          </div>
-          </RastreioProvider>
-        </DataProvider>
+        <SessionProvider>
+          <AppShell>{children}</AppShell>
+        </SessionProvider>
       </body>
     </html>
   );

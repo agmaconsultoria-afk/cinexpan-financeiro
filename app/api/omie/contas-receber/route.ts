@@ -8,6 +8,7 @@ import {
   resolverClientes,
 } from "@/lib/rastreio/omie-client";
 import { salvarCompetencia } from "@/lib/rastreio/db";
+import { exigirEdicao } from "@/lib/auth/session";
 
 // Sempre dinâmico (lê credenciais e chama API externa em tempo de requisição).
 export const dynamic = "force-dynamic";
@@ -20,6 +21,9 @@ export const dynamic = "force-dynamic";
  * As credenciais NUNCA são expostas ao cliente.
  */
 export async function GET(req: NextRequest) {
+  const sessao = await exigirEdicao();
+  if (sessao instanceof NextResponse) return sessao;
+
   const cred = lerCredenciais();
   if (!cred) {
     return NextResponse.json(

@@ -17,6 +17,8 @@ import { formatarMoeda, formatarPercent, formatarData } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { SeletorMes } from "@/components/SeletorMes";
 import { ContaDerivada, Visao } from "@/lib/rastreio/types";
+import { useSessao } from "@/components/SessionProvider";
+import { podeEditar } from "@/lib/auth/roles";
 
 type Coluna = "falta" | "recebido" | "descontos" | "juros" | "atrasado";
 
@@ -32,13 +34,19 @@ function ValorEditavel({
   valor,
   onSalvar,
   classe = "",
+  somenteLeitura = false,
 }: {
   valor: number;
   onSalvar: (n: number) => void;
   classe?: string;
+  somenteLeitura?: boolean;
 }) {
   const [editando, setEditando] = useState(false);
   const [texto, setTexto] = useState("");
+
+  if (somenteLeitura) {
+    return <span className={classe}>{formatarMoeda(valor)}</span>;
+  }
 
   function abrir() {
     setTexto(valor ? valor.toString().replace(".", ",") : "");
@@ -96,6 +104,9 @@ export default function RastreioFaturamentoPage() {
     carregarDoBanco,
     voltarParaExemplo,
   } = useRastreio();
+
+  const { usuario } = useSessao();
+  const podeSincronizar = !usuario || podeEditar(usuario.perfil);
 
   const [aviso, setAviso] = useState<string | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
@@ -217,16 +228,18 @@ export default function RastreioFaturamentoPage() {
         subtitulo="Cruza o faturamento (competência) com o financeiro (contas a receber)"
         acoes={
           <div className="no-print flex flex-wrap items-center gap-2">
-            <SeletorMes value={mesOmie} onChange={setMesOmie} />
-            <button
-              onClick={sincronizarOmie}
-              disabled={sincronizando}
-              title="Sincroniza o mês selecionado ao lado, a partir do Omie"
-              className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-            >
-              <Cloud className={`h-4 w-4 ${sincronizando ? "animate-pulse" : ""}`} />
-              {sincronizando ? "Sincronizando…" : "Sincronizar Omie"}
-            </button>
+            {podeSincronizar && <SeletorMes value={mesOmie} onChange={setMesOmie} />}
+            {podeSincronizar && (
+              <button
+                onClick={sincronizarOmie}
+                disabled={sincronizando}
+                title="Sincroniza o mês selecionado ao lado, a partir do Omie"
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+              >
+                <Cloud className={`h-4 w-4 ${sincronizando ? "animate-pulse" : ""}`} />
+                {sincronizando ? "Sincronizando…" : "Sincronizar Omie"}
+              </button>
+            )}
             <button
               onClick={() => window.print()}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -312,6 +325,7 @@ export default function RastreioFaturamentoPage() {
               valor={dem.faturamentoMes}
               onSalvar={(n) => setFaturamentoMes(competencia, n)}
               classe="text-xl font-bold text-brand-800"
+              somenteLeitura={!podeSincronizar}
             />
           </div>
 
@@ -410,7 +424,11 @@ export default function RastreioFaturamentoPage() {
                     <span className="text-xs text-slate-400">(consumidor final)</span>
                   </dt>
                   <dd className="tabular-nums">
-                    <ValorEditavel valor={pf} onSalvar={(n) => setVendasPFMes(competencia, n)} />
+                    <ValorEditavel
+                      valor={pf}
+                      onSalvar={(n) => setVendasPFMes(competencia, n)}
+                      somenteLeitura={!podeSincronizar}
+                    />
                   </dd>
                 </div>
                 <div className="flex items-center justify-between border-t border-slate-200 pt-3">

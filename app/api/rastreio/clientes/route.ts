@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { lerCredenciais, atualizarCacheClientes } from "@/lib/rastreio/omie-client";
 import { reaplicarNomesClientes, diagnosticoClientes } from "@/lib/rastreio/db";
+import { exigirSessao, exigirEdicao } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /** GET /api/rastreio/clientes — diagnóstico do cache de clientes. */
 export async function GET() {
+  const sessao = await exigirSessao();
+  if (sessao instanceof NextResponse) return sessao;
   const diag = await diagnosticoClientes();
   return NextResponse.json({ ok: true, ...diag });
 }
@@ -16,6 +19,9 @@ export async function GET() {
  * cache e reaplica os nomes em todo o histórico já gravado.
  */
 export async function POST() {
+  const sessao = await exigirEdicao();
+  if (sessao instanceof NextResponse) return sessao;
+
   const cred = lerCredenciais();
   if (!cred) {
     return NextResponse.json(

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setFaturamento, setVendasPF } from "@/lib/rastreio/db";
+import { exigirEdicao } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
  * Grava o faturamento manual / vendas PF da competência na base.
  */
 export async function POST(req: NextRequest) {
+  const sessao = await exigirEdicao();
+  if (sessao instanceof NextResponse) return sessao;
   try {
     const body = await req.json();
     const mes = (body?.mes ?? "").toString();
