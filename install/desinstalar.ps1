@@ -1,4 +1,4 @@
-<#
+﻿<#
   Remove o serviço do Windows e a regra de firewall do Portal Financeiro.
   NÃO apaga o banco de dados nem o Node/PostgreSQL — só o serviço da aplicação.
   Execute COMO ADMINISTRADOR.

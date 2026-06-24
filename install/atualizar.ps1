@@ -1,4 +1,4 @@
-<#
+﻿<#
   Atualiza o Portal Financeiro Cinexpan para a versão mais nova do repositório:
     1. Para o serviço
     2. git pull (baixa as mudanças)
