@@ -144,7 +144,9 @@ export async function callOmie<T = unknown>(
     throw new Error(`Omie: ${fs}`);
   }
   if (status < 200 || status >= 300) {
-    throw new Error(`Omie respondeu HTTP ${status}`);
+    // Inclui corpo da resposta para facilitar diagnóstico
+    const detalhe = JSON.stringify(json).slice(0, 500);
+    throw new Error(`Omie HTTP ${status} [${call}]: ${detalhe}`);
   }
   return json as T;
 }
@@ -750,25 +752,46 @@ export async function listarNotasFiscais(
   let totalNFs = 0;
   let truncado = false;
 
+  // Descobre o par recurso/método correto na primeira página
+  let recursoNF = "produtos/nf/";
+  let metodoNF = "ListarNFe";
+  let descoberto = false;
+
   do {
     const param: Record<string, unknown> = {
       pagina,
       registros_por_pagina: 50,
     };
-    if (opcoes.dataDe) {
-      param.filtrar_por_data_de = opcoes.dataDe;
-      param.dEmissaoDe = opcoes.dataDe;
-    }
-    if (opcoes.dataAte) {
-      param.filtrar_por_data_ate = opcoes.dataAte;
-      param.dEmissaoAte = opcoes.dataAte;
-    }
+    if (opcoes.dataDe) param.filtrar_por_data_de = opcoes.dataDe;
+    if (opcoes.dataAte) param.filtrar_por_data_ate = opcoes.dataAte;
 
-    const resp = await callOmie<{
-      nfCadastro?: Record<string, unknown>[];
-      total_de_paginas?: number;
-      total_de_registros?: number;
-    }>(cred, "produtos/nf/", "ListarNFe", param);
+    type RespNF = { nfCadastro?: Record<string, unknown>[]; total_de_paginas?: number; total_de_registros?: number };
+    // Na primeira página, se falhar tenta alternativas de endpoint.
+    let resp: RespNF = {};
+    if (!descoberto) {
+      const candidatos: [string, string][] = [
+        ["produtos/nf/", "ListarNFe"],
+        ["produtos/nfconsultar/", "ListarNFe"],
+        ["produtos/nf/", "ListarNF"],
+      ];
+      let ultimo: Error | null = null;
+      let achou = false;
+      for (const [rec, met] of candidatos) {
+        try {
+          resp = await callOmie<RespNF>(cred, rec, met, param);
+          recursoNF = rec;
+          metodoNF = met;
+          descoberto = true;
+          achou = true;
+          break;
+        } catch (e) {
+          ultimo = e instanceof Error ? e : new Error(String(e));
+        }
+      }
+      if (!achou) throw ultimo ?? new Error("Nenhum endpoint NF respondeu.");
+    } else {
+      resp = await callOmie<RespNF>(cred, recursoNF, metodoNF, param);
+    }
 
     totalPaginas = resp.total_de_paginas ?? 1;
     totalNFs = resp.total_de_registros ?? 0;
