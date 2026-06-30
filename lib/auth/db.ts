@@ -276,6 +276,23 @@ export async function removerUsuario(id: number): Promise<void> {
   await getPool().query("DELETE FROM auth_usuarios WHERE id = $1", [id]);
 }
 
+/** Troca a senha do usuário após verificar a senha atual. Retorna false se a senha atual estiver errada. */
+export async function trocarSenha(id: number, senhaAtual: string, novaSenha: string): Promise<boolean> {
+  await ensureSchema();
+  const pool = getPool();
+  const { rows } = await pool.query<{ senha_hash: string }>(
+    "SELECT senha_hash FROM auth_usuarios WHERE id = $1 AND ativo = true",
+    [id]
+  );
+  if (!rows[0]) return false;
+  if (!verificarSenha(senhaAtual, rows[0].senha_hash)) return false;
+  await pool.query("UPDATE auth_usuarios SET senha_hash = $1 WHERE id = $2", [
+    hashSenha(novaSenha),
+    id,
+  ]);
+  return true;
+}
+
 /** Conta quantos administradores ATIVOS existem (para não remover o último). */
 export async function totalAdminsAtivos(): Promise<number> {
   await ensureSchema();
