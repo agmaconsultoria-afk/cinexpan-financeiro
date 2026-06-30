@@ -945,6 +945,12 @@ export async function listarNotasFiscais(
         const serie = (ide.serie ?? "").toString();
         const dataEmissao = dataIso(ide.dEmi) ?? "";
 
+        // tpNF: "0"=entrada (devolução/compra), "1"=saída (venda) — descarta entradas
+        // finNFe: "4"=devolução de saída — também exclui (não conta no faturamento bruto)
+        const tpNF = (ide.tpNF ?? "1").toString();
+        const finNFe = (ide.finNFe ?? "1").toString();
+        if (tpNF === "0" || finNFe === "4") continue;
+
         // dCan não-vazio = cancelada; cDeneg="S" = denegada pela SEFAZ
         const dCan = (ide.dCan ?? "").toString().trim();
         const cDeneg = (ide.cDeneg ?? "").toString().toUpperCase();
