@@ -30,6 +30,7 @@ function getPool(): Pool {
       connectionString: process.env.DATABASE_URL,
       max: 5,
       idleTimeoutMillis: 30_000,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
     });
   }
   return globalForPg._cinexpanAuthPool;
