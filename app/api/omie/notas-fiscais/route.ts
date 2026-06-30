@@ -43,24 +43,27 @@ export async function GET(req: NextRequest) {
     dataAte = searchParams.get("ate") ?? undefined;
   }
 
-  // Modo debug: devolve amostra bruta do Omie para diagnóstico.
+  // Modo debug: amostra bruta de ambos os endpoints para diagnóstico.
   if (searchParams.get("debug") === "1") {
-    try {
-      const amostra = await callOmie(cred, "produtos/nf/", "ListarNFe", {
-        pagina: 1,
-        registros_por_pagina: 1,
-      });
-      return NextResponse.json({ ok: true, debug: true, amostra });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Erro ao amostrar NFs.";
-      return NextResponse.json({ ok: false, erro: msg }, { status: 502 });
+    const resultados: Record<string, unknown> = { ok: true, debug: true };
+    for (const [rec, met, params] of [
+      ["produtos/nf/", "ListarNFe", { pagina: 1, registros_por_pagina: 1 }],
+      ["pedido/pedido_venda_produto/", "ListarPedidos", { pagina: 1, registros_por_pagina: 1, apenas_importado_api: "N", filtrar_por_etapa: "70" }],
+    ] as [string, string, Record<string, unknown>][]) {
+      try {
+        resultados[`${rec}${met}`] = await callOmie(cred, rec, met, params);
+      } catch (e) {
+        resultados[`${rec}${met}_erro`] = e instanceof Error ? e.message : String(e);
+      }
     }
+    return NextResponse.json(resultados);
   }
 
   try {
     const resultado = await listarNotasFiscais(cred, { dataDe, dataAte });
     return NextResponse.json({
       ok: true,
+      fonte: resultado.fonte,
       totalNFs: resultado.totalNFs,
       truncado: resultado.truncado,
       itens: resultado.itens,

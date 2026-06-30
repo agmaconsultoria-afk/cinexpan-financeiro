@@ -744,7 +744,7 @@ function mapearSituacaoNF(raw: string): string {
 export async function listarNotasFiscais(
   cred: OmieCredenciais,
   opcoes: { dataDe?: string; dataAte?: string; maxPaginas?: number } = {}
-): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean }> {
+): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean; fonte: string }> {
   const maxPaginas = opcoes.maxPaginas ?? 60;
   const itens: NotaFiscalItem[] = [];
   let pagina = 1;
@@ -752,109 +752,156 @@ export async function listarNotasFiscais(
   let totalNFs = 0;
   let truncado = false;
 
-  // Descobre o par recurso/método correto na primeira página
-  let recursoNF = "produtos/nf/";
-  let metodoNF = "ListarNFe";
-  let descoberto = false;
+  // Estratégia 1: produtos/nf ListarNFe (NF direta)
+  // Estratégia 2: pedido/pedido_venda_produto ListarPedidos (pedidos faturados, etapa 70)
+  // Tentamos NF direto primeiro; se falhar em qualquer erro HTTP/method, usamos pedidos.
+  type Fonte = "nf" | "pedido";
+  let fonte: Fonte = "nf";
+  let fonteConfirmada = false;
+
+  const buildParamNF = (p: number): Record<string, unknown> => {
+    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 50 };
+    if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
+    if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
+    return pm;
+  };
+
+  const buildParamPedido = (p: number): Record<string, unknown> => {
+    const pm: Record<string, unknown> = {
+      pagina: p,
+      registros_por_pagina: 50,
+      apenas_importado_api: "N",
+      filtrar_por_etapa: "70", // etapa 70 = faturado
+    };
+    if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
+    if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
+    return pm;
+  };
 
   do {
-    const param: Record<string, unknown> = {
-      pagina,
-      registros_por_pagina: 50,
-    };
-    if (opcoes.dataDe) param.filtrar_por_data_de = opcoes.dataDe;
-    if (opcoes.dataAte) param.filtrar_por_data_ate = opcoes.dataAte;
+    let lista: Record<string, unknown>[] = [];
 
-    type RespNF = { nfCadastro?: Record<string, unknown>[]; total_de_paginas?: number; total_de_registros?: number };
-    // Na primeira página, se falhar tenta alternativas de endpoint.
-    let resp: RespNF = {};
-    if (!descoberto) {
-      const candidatos: [string, string][] = [
-        ["produtos/nf/", "ListarNFe"],
-        ["produtos/nfconsultar/", "ListarNFe"],
-        ["produtos/nf/", "ListarNF"],
-      ];
-      let ultimo: Error | null = null;
-      let achou = false;
-      for (const [rec, met] of candidatos) {
-        try {
-          resp = await callOmie<RespNF>(cred, rec, met, param);
-          recursoNF = rec;
-          metodoNF = met;
-          descoberto = true;
-          achou = true;
-          break;
-        } catch (e) {
-          ultimo = e instanceof Error ? e : new Error(String(e));
+    if (!fonteConfirmada) {
+      // Tenta NF direto; se falhar, usa pedidos
+      try {
+        const r = await callOmie<{
+          nfCadastro?: Record<string, unknown>[];
+          total_de_paginas?: number;
+          total_de_registros?: number;
+        }>(cred, "produtos/nf/", "ListarNFe", buildParamNF(pagina));
+        totalPaginas = r.total_de_paginas ?? 1;
+        totalNFs = r.total_de_registros ?? 0;
+        lista = r.nfCadastro ?? [];
+        fonte = "nf";
+        fonteConfirmada = true;
+      } catch {
+        // NF direto não disponível → usa pedidos de venda faturados
+        const r2 = await callOmie<{
+          pedido_venda_produto_lista?: Record<string, unknown>[];
+          lista_pedidos?: Record<string, unknown>[];
+          total_de_paginas?: number;
+          total_de_registros?: number;
+        }>(cred, "pedido/pedido_venda_produto/", "ListarPedidos", buildParamPedido(pagina));
+        totalPaginas = r2.total_de_paginas ?? 1;
+        totalNFs = r2.total_de_registros ?? 0;
+        lista = (r2.pedido_venda_produto_lista ?? r2.lista_pedidos ?? []) as Record<string, unknown>[];
+        fonte = "pedido";
+        fonteConfirmada = true;
+      }
+    } else if (fonte === "nf") {
+      const r = await callOmie<{
+        nfCadastro?: Record<string, unknown>[];
+        total_de_paginas?: number;
+        total_de_registros?: number;
+      }>(cred, "produtos/nf/", "ListarNFe", buildParamNF(pagina));
+      totalPaginas = r.total_de_paginas ?? 1;
+      totalNFs = r.total_de_registros ?? 0;
+      lista = r.nfCadastro ?? [];
+    } else {
+      const r2 = await callOmie<{
+        pedido_venda_produto_lista?: Record<string, unknown>[];
+        lista_pedidos?: Record<string, unknown>[];
+        total_de_paginas?: number;
+        total_de_registros?: number;
+      }>(cred, "pedido/pedido_venda_produto/", "ListarPedidos", buildParamPedido(pagina));
+      totalPaginas = r2.total_de_paginas ?? 1;
+      totalNFs = r2.total_de_registros ?? 0;
+      lista = (r2.pedido_venda_produto_lista ?? r2.lista_pedidos ?? []) as Record<string, unknown>[];
+    }
+
+    for (const registro of lista) {
+      if (fonte === "nf") {
+        // ---- Parsing do formato NF direto (produtos/nf) ----
+        const cab = (registro.cabecalho as Record<string, unknown>) ?? {};
+        const info = (registro.informacoes_adicionais as Record<string, unknown>) ?? {};
+        const det = (registro.det as Record<string, unknown>[]) ?? [];
+        const nfNumRaw = (pega(cab, "nNF", "numero_nf", "cNumNF") ?? "").toString();
+        const nfNum = nfNumRaw.padStart(8, "0");
+        const serie = (pega(cab, "serie", "cSerie") ?? "").toString();
+        const dataEmissao = dataIso(pega(cab, "dEmi", "data_emissao")) ?? "";
+        const clienteNome = (pega(cab, "cRazao", "razao_social", "cNome", "nome_cliente") ?? "").toString();
+        const clienteDoc = (pega(cab, "cCPFCNPJ", "cpf_cnpj", "cDocumento") ?? "").toString();
+        const operacao = (pega(cab, "cOperacao", "operacao", "cTipoOperacao") ?? "").toString();
+        const situacao = mapearSituacaoNF((pega(cab, "cSitNF", "situacao", "cStatus") ?? "").toString());
+        const tagsArr = (info.tags as Record<string, unknown>[]) ?? [];
+        const tags = tagsArr.map((t) => (t.tag ?? t.cTag ?? "").toString()).filter(Boolean).join(", ");
+        for (const item of det) {
+          const prod = (item.produto as Record<string, unknown>) ?? {};
+          const imp = (item.imposto as Record<string, unknown>) ?? {};
+          const icms = (imp.icms as Record<string, unknown>) ?? {};
+          const cfop = (pega(prod, "cfop", "cCFOP") ?? pega(icms, "cfop", "cCFOP") ?? "").toString();
+          itens.push({
+            dataEmissao, nf: nfNum, serie,
+            clienteNome: clienteNome || clienteDoc, clienteDoc,
+            produto: (pega(prod, "cDescricao", "descricao", "nome_produto") ?? "").toString(),
+            quantidade: num(pega(prod, "nQtde", "quantidade", "qtde") ?? 0),
+            unidade: (pega(prod, "cUnidade", "unidade") ?? "").toString(),
+            valorUnitario: num(pega(prod, "nValUnit", "valor_unitario") ?? 0),
+            totalMercadoria: num(pega(prod, "nValorTotal", "valor_total", "nTotProd") ?? 0),
+            operacao, situacao, tags, cfop,
+          });
+        }
+      } else {
+        // ---- Parsing do formato Pedido de Venda (pedido/pedido_venda_produto) ----
+        const cab = (registro.cabecalho as Record<string, unknown>) ?? {};
+        const info = (registro.informacoes_adicionais as Record<string, unknown>) ?? {};
+        const det = (registro.det as Record<string, unknown>[]) ?? [];
+
+        const nfNumRaw = (pega(cab, "numero_nota", "nNF", "numero_pedido") ?? "").toString();
+        // Pedidos sem nota fiscal emitida são ignorados
+        if (!nfNumRaw || nfNumRaw === "0") continue;
+        const nfNum = nfNumRaw.padStart(8, "0");
+        const serie = (pega(cab, "serie_nota", "serie") ?? "").toString();
+        const dataEmissao = dataIso(pega(cab, "data_nota", "data_previsao")) ?? "";
+        const clienteNome = (pega(info, "nome_cliente", "contato") ?? "").toString();
+        const clienteDoc = (pega(info, "cpf_cnpj_cliente", "cCPFCNPJ") ?? "").toString();
+        const etapa = (pega(cab, "etapa") ?? "").toString();
+        const situacao = etapa === "70" ? "Autorizado" : mapearSituacaoNF(etapa);
+        const operacao = "Pedido de Venda";
+
+        for (const item of det) {
+          const prod = (item.produto as Record<string, unknown>) ?? {};
+          const cfop = (pega(prod, "cfop", "cCFOP") ?? "").toString();
+          itens.push({
+            dataEmissao, nf: nfNum, serie,
+            clienteNome: clienteNome || clienteDoc, clienteDoc,
+            produto: (pega(prod, "descricao", "cDescricao", "nome_produto") ?? "").toString(),
+            quantidade: num(pega(prod, "quantidade", "nQtde") ?? 0),
+            unidade: (pega(prod, "unidade", "cUnidade") ?? "").toString(),
+            valorUnitario: num(pega(prod, "valor_unitario", "nValUnit") ?? 0),
+            totalMercadoria: num(pega(prod, "valor_total", "nValorTotal") ?? 0),
+            operacao, situacao, tags: "", cfop,
+          });
         }
       }
-      if (!achou) throw ultimo ?? new Error("Nenhum endpoint NF respondeu.");
-    } else {
-      resp = await callOmie<RespNF>(cred, recursoNF, metodoNF, param);
     }
 
-    totalPaginas = resp.total_de_paginas ?? 1;
-    totalNFs = resp.total_de_registros ?? 0;
-
-    for (const nf of resp.nfCadastro ?? []) {
-      const cab = (nf.cabecalho as Record<string, unknown>) ?? {};
-      const info = (nf.informacoes_adicionais as Record<string, unknown>) ?? {};
-      const det = (nf.det as Record<string, unknown>[]) ?? [];
-
-      const nfNumRaw = (pega(cab, "nNF", "numero_nf", "cNumNF") ?? "").toString();
-      const nfNum = nfNumRaw.padStart(8, "0");
-      const serie = (pega(cab, "serie", "cSerie") ?? "").toString();
-      const dataEmissao = dataIso(pega(cab, "dEmi", "data_emissao")) ?? "";
-      const clienteNome = (pega(cab, "cRazao", "razao_social", "cNome", "nome_cliente") ?? "").toString();
-      const clienteDoc = (pega(cab, "cCPFCNPJ", "cpf_cnpj", "cDocumento") ?? "").toString();
-      const operacao = (pega(cab, "cOperacao", "operacao", "cTipoOperacao") ?? "").toString();
-      const situacaoRaw = (pega(cab, "cSitNF", "situacao", "cStatus", "cSituacao") ?? "").toString();
-      const situacao = mapearSituacaoNF(situacaoRaw);
-
-      const tagsArr = (info.tags as Record<string, unknown>[]) ?? [];
-      const tags = tagsArr
-        .map((t) => (t.tag ?? t.cTag ?? "").toString())
-        .filter(Boolean)
-        .join(", ");
-
-      for (const item of det) {
-        const prod = (item.produto as Record<string, unknown>) ?? {};
-        const imp = (item.imposto as Record<string, unknown>) ?? {};
-        const icms = (imp.icms as Record<string, unknown>) ?? {};
-        const cfopRaw = (
-          pega(prod, "cfop", "cCFOP") ?? pega(icms, "cfop", "cCFOP") ?? ""
-        ).toString();
-
-        itens.push({
-          dataEmissao,
-          nf: nfNum,
-          serie,
-          clienteNome: clienteNome || clienteDoc,
-          clienteDoc,
-          produto: (pega(prod, "cDescricao", "descricao", "nome_produto") ?? "").toString(),
-          quantidade: num(pega(prod, "nQtde", "quantidade", "qtde") ?? 0),
-          unidade: (pega(prod, "cUnidade", "unidade") ?? "").toString(),
-          valorUnitario: num(pega(prod, "nValUnit", "valor_unitario", "nValorUnitario") ?? 0),
-          totalMercadoria: num(
-            pega(prod, "nValorTotal", "valor_total", "total_produto", "nTotProd") ?? 0
-          ),
-          operacao,
-          situacao,
-          tags,
-          cfop: cfopRaw,
-        });
-      }
-    }
-
-    if (pagina >= maxPaginas && pagina < totalPaginas) {
-      truncado = true;
-      break;
-    }
+    if (pagina >= maxPaginas && pagina < totalPaginas) { truncado = true; break; }
     pagina++;
     if (pagina <= totalPaginas) await sleep(200);
   } while (pagina <= totalPaginas);
 
-  return { itens, totalNFs, truncado };
+  return { itens, totalNFs, truncado, fonte };
 }
 
 // ===================== Contas a Receber (financas/contareceber) =====================
