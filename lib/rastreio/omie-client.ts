@@ -761,7 +761,6 @@ export async function listarNotasFiscais(
   type Fonte = "nfconsultar" | "nf" | "pedido" | "financas";
   let fonte: Fonte = "nfconsultar";
   let fonteConfirmada = false;
-  let paginaStep = 1;       // -1 para paginação reversa no nfconsultar
   let paginasProcessadas = 0;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
@@ -794,9 +793,9 @@ export async function listarNotasFiscais(
     return { lista, pags: (r.total_de_paginas as number) ?? 1, total: (r.total_de_registros as number) ?? 0 };
   }
 
-  // nfconsultar ignora filtrar_por_data_de — retorna 126k+ NFs em ordem crescente de nNF.
-  // Jan/2026 está nas últimas páginas (~2526). Fazemos uma chamada de sondagem para
-  // obter total_de_paginas e então paginamos de trás para frente.
+  // nfconsultar ignora filtrar_por_data_de e retorna todas as NFs em ordem crescente de nNF.
+  // Busca binária (O(log N) chamadas) encontra a primeira página do período e paginamos
+  // para frente a partir daí — Jan/2026 a Jun/2026 são alcançados em ~11 + ~21 chamadas.
   if (opcoes.dataDe || opcoes.dataAte) {
     try {
       const probe = await callOmie<Record<string, unknown>>(
@@ -806,10 +805,35 @@ export async function listarNotasFiscais(
       const ex = extrairNFResp(probe);
       totalPaginas = ex.pags;
       totalNFs = ex.total;
-      pagina = totalPaginas;  // começa da última página (NFs mais recentes)
-      paginaStep = -1;
       fonte = "nfconsultar";
       fonteConfirmada = true;
+
+      const deIso = brParaIso(opcoes.dataDe);
+      if (deIso) {
+        // Busca binária: encontra a primeira página onde alguma NF é >= dataDe
+        let low = 1, high = totalPaginas;
+        while (low < high) {
+          const mid = Math.floor((low + high) / 2);
+          try {
+            const rm = await callOmie<Record<string, unknown>>(
+              cred, "produtos/nfconsultar/", "ListarNF",
+              { pagina: mid, registros_por_pagina: 50 }
+            );
+            const lm = extrairNFResp(rm).lista;
+            const ideLast = (lm[lm.length - 1]?.ide as Record<string, unknown>) ?? {};
+            const dataNova = dataIso(ideLast.dEmi);
+            if (!dataNova || dataNova < deIso) {
+              low = mid + 1; // toda a página é anterior a dataDe → busca na metade superior
+            } else {
+              high = mid;    // há NFs no período ou mais novas → pode estar aqui ou antes
+            }
+          } catch { low = mid + 1; }
+          await sleep(150);
+        }
+        // Recua 1 página para cobrir NFs de fronteira que podem ter datas fora de ordem
+        pagina = Math.max(1, low - 1);
+      }
+      // paginaStep = 1 (padrão) → avança para frente a partir de pagina
     } catch {
       // nfconsultar indisponível — loop principal tentará produtos/nf, pedido, financas
     }
@@ -1046,25 +1070,25 @@ export async function listarNotasFiscais(
 
     paginasProcessadas++;
 
-    // Early stop em paginação reversa: quando a NF mais recente desta página já é
-    // anterior a dataDe, todas as páginas anteriores serão ainda mais antigas.
-    if (paginaStep === -1 && opcoes.dataDe) {
-      const deIso = brParaIso(opcoes.dataDe);
-      if (deIso && lista.length > 0) {
-        const ideLast = (lista[lista.length - 1]?.ide as Record<string, unknown>) ?? {};
-        const dataUltima = dataIso(ideLast.dEmi);
-        if (dataUltima && dataUltima < deIso) break;
+    // Early stop: quando a NF mais antiga desta página já é posterior a dataAte,
+    // todas as páginas seguintes serão ainda mais novas — nada mais a encontrar.
+    if (fonte === "nfconsultar" && fonteConfirmada && opcoes.dataAte) {
+      const ateIso = brParaIso(opcoes.dataAte);
+      if (ateIso && lista.length > 0) {
+        const ide0 = (lista[0]?.ide as Record<string, unknown>) ?? {};
+        const dataAntiga = dataIso(ide0.dEmi);
+        if (dataAntiga && dataAntiga > ateIso) break;
       }
     }
 
     if (paginasProcessadas >= maxPaginas) {
-      truncado = paginaStep === -1 ? pagina > 1 : pagina < totalPaginas;
+      truncado = pagina < totalPaginas;
       break;
     }
-    pagina += paginaStep;
-    if (pagina < 1 || pagina > totalPaginas) break;
+    pagina++;
+    if (pagina > totalPaginas) break;
     await sleep(200);
-  } while (paginaStep === -1 ? pagina >= 1 : pagina <= totalPaginas);
+  } while (pagina <= totalPaginas);
 
   // Pós-filtro por data de emissão — garante que, mesmo quando o filtro da API
   // é ignorado, só chegam ao cliente os itens do período solicitado.
