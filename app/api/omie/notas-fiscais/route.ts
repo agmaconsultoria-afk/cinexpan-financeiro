@@ -43,10 +43,12 @@ export async function GET(req: NextRequest) {
     dataAte = searchParams.get("ate") ?? undefined;
   }
 
-  // Modo debug: amostra bruta de ambos os endpoints para diagnóstico.
+  // Modo debug: amostra bruta dos endpoints de NF para diagnóstico.
   if (searchParams.get("debug") === "1") {
     const resultados: Record<string, unknown> = { ok: true, debug: true };
+    const baseParams = dataDe ? { pagina: 1, registros_por_pagina: 1, filtrar_por_data_de: dataDe, filtrar_por_data_ate: dataAte } : { pagina: 1, registros_por_pagina: 1 };
     for (const [rec, met, params] of [
+      ["produtos/nfconsultar/", "ListarNF", baseParams],
       ["produtos/nf/", "ListarNFe", { pagina: 1, registros_por_pagina: 1 }],
       ["pedido/pedido_venda_produto/", "ListarPedidos", { pagina: 1, registros_por_pagina: 1, apenas_importado_api: "N", filtrar_por_etapa: "70" }],
     ] as [string, string, Record<string, unknown>][]) {

@@ -753,11 +753,12 @@ export async function listarNotasFiscais(
   let totalNFs = 0;
   let truncado = false;
 
-  // Estratégia 1: produtos/nf ListarNFe
-  // Estratégia 2: pedido/pedido_venda_produto ListarPedidos (etapa 70 = faturado)
-  // Estratégia 3: financas/contareceber (fallback — módulos NF/pedido não disponíveis nesta conta)
-  type Fonte = "nf" | "pedido" | "financas";
-  let fonte: Fonte = "nf";
+  // Estratégia 1: produtos/nfconsultar ListarNF (endpoint de consulta de NF)
+  // Estratégia 2: produtos/nf ListarNFe (endpoint de emissão de NF)
+  // Estratégia 3: pedido/pedido_venda_produto ListarPedidos (etapa 70 = faturado)
+  // Estratégia 4: financas/contareceber (fallback — módulos NF/pedido não disponíveis)
+  type Fonte = "nfconsultar" | "nf" | "pedido" | "financas";
+  let fonte: Fonte = "nfconsultar";
   let fonteConfirmada = false;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
@@ -784,52 +785,69 @@ export async function listarNotasFiscais(
     return pm;
   };
 
+  // Extrai lista e totais de uma resposta de NF (nfconsultar ou nf direto)
+  function extrairNFResp(r: Record<string, unknown>): { lista: Record<string, unknown>[]; pags: number; total: number } {
+    const lista = (r.nfCadastro ?? r.nfRetorno ?? r.listaNF ?? r.lista ?? []) as Record<string, unknown>[];
+    return { lista, pags: (r.total_de_paginas as number) ?? 1, total: (r.total_de_registros as number) ?? 0 };
+  }
+
   do {
     let lista: Record<string, unknown>[] = [];
 
     if (!fonteConfirmada) {
+      // Tenta nfconsultar primeiro (endpoint de consulta de NF)
       try {
-        const r = await callOmie<{
-          nfCadastro?: Record<string, unknown>[];
-          total_de_paginas?: number;
-          total_de_registros?: number;
-        }>(cred, "produtos/nf/", "ListarNFe", buildParamNF(pagina));
-        totalPaginas = r.total_de_paginas ?? 1;
-        totalNFs = r.total_de_registros ?? 0;
-        lista = r.nfCadastro ?? [];
-        fonte = "nf"; fonteConfirmada = true;
+        const r = await callOmie<Record<string, unknown>>(
+          cred, "produtos/nfconsultar/", "ListarNF", buildParamNF(pagina)
+        );
+        const ex = extrairNFResp(r);
+        totalPaginas = ex.pags; totalNFs = ex.total; lista = ex.lista;
+        fonte = "nfconsultar"; fonteConfirmada = true;
       } catch {
+        // Tenta produtos/nf direto
         try {
-          const r2 = await callOmie<{
-            pedido_venda_produto_lista?: Record<string, unknown>[];
-            lista_pedidos?: Record<string, unknown>[];
-            total_de_paginas?: number;
-            total_de_registros?: number;
-          }>(cred, "pedido/pedido_venda_produto/", "ListarPedidos", buildParamPedido(pagina));
-          totalPaginas = r2.total_de_paginas ?? 1;
-          totalNFs = r2.total_de_registros ?? 0;
-          lista = (r2.pedido_venda_produto_lista ?? r2.lista_pedidos ?? []) as Record<string, unknown>[];
-          fonte = "pedido"; fonteConfirmada = true;
-        } catch {
-          // Conta sem módulo NF/pedido → usa contas a receber como proxy
-          const r3 = await callOmie<ListarResponse>(
-            cred, "financas/contareceber/", "ListarContasReceber", buildParamCR(pagina)
+          const r = await callOmie<Record<string, unknown>>(
+            cred, "produtos/nf/", "ListarNFe", buildParamNF(pagina)
           );
-          totalPaginas = r3.total_de_paginas ?? 1;
-          totalNFs = r3.total_de_registros ?? 0;
-          lista = r3.conta_receber_cadastro ?? [];
-          fonte = "financas"; fonteConfirmada = true;
+          const ex = extrairNFResp(r);
+          totalPaginas = ex.pags; totalNFs = ex.total; lista = ex.lista;
+          fonte = "nf"; fonteConfirmada = true;
+        } catch {
+          try {
+            const r2 = await callOmie<{
+              pedido_venda_produto_lista?: Record<string, unknown>[];
+              lista_pedidos?: Record<string, unknown>[];
+              total_de_paginas?: number;
+              total_de_registros?: number;
+            }>(cred, "pedido/pedido_venda_produto/", "ListarPedidos", buildParamPedido(pagina));
+            totalPaginas = r2.total_de_paginas ?? 1;
+            totalNFs = r2.total_de_registros ?? 0;
+            lista = (r2.pedido_venda_produto_lista ?? r2.lista_pedidos ?? []) as Record<string, unknown>[];
+            fonte = "pedido"; fonteConfirmada = true;
+          } catch {
+            // Conta sem módulo NF/pedido → usa contas a receber como proxy
+            const r3 = await callOmie<ListarResponse>(
+              cred, "financas/contareceber/", "ListarContasReceber", buildParamCR(pagina)
+            );
+            totalPaginas = r3.total_de_paginas ?? 1;
+            totalNFs = r3.total_de_registros ?? 0;
+            lista = r3.conta_receber_cadastro ?? [];
+            fonte = "financas"; fonteConfirmada = true;
+          }
         }
       }
+    } else if (fonte === "nfconsultar") {
+      const r = await callOmie<Record<string, unknown>>(
+        cred, "produtos/nfconsultar/", "ListarNF", buildParamNF(pagina)
+      );
+      const ex = extrairNFResp(r);
+      totalPaginas = ex.pags; totalNFs = ex.total; lista = ex.lista;
     } else if (fonte === "nf") {
-      const r = await callOmie<{
-        nfCadastro?: Record<string, unknown>[];
-        total_de_paginas?: number;
-        total_de_registros?: number;
-      }>(cred, "produtos/nf/", "ListarNFe", buildParamNF(pagina));
-      totalPaginas = r.total_de_paginas ?? 1;
-      totalNFs = r.total_de_registros ?? 0;
-      lista = r.nfCadastro ?? [];
+      const r = await callOmie<Record<string, unknown>>(
+        cred, "produtos/nf/", "ListarNFe", buildParamNF(pagina)
+      );
+      const ex = extrairNFResp(r);
+      totalPaginas = ex.pags; totalNFs = ex.total; lista = ex.lista;
     } else if (fonte === "pedido") {
       const r2 = await callOmie<{
         pedido_venda_produto_lista?: Record<string, unknown>[];
@@ -850,7 +868,7 @@ export async function listarNotasFiscais(
     }
 
     for (const registro of lista) {
-      if (fonte === "nf") {
+      if (fonte === "nfconsultar" || fonte === "nf") {
         // ---- Parsing do formato NF direto (produtos/nf) ----
         const cab = (registro.cabecalho as Record<string, unknown>) ?? {};
         const info = (registro.informacoes_adicionais as Record<string, unknown>) ?? {};
@@ -882,7 +900,7 @@ export async function listarNotasFiscais(
           });
         }
       } else if (fonte === "pedido") {
-        // ---- Parsing do formato Pedido de Venda (pedido/pedido_venda_produto) ----
+        // ---- Parsing do formato Pedido de Venda ----
         const cab = (registro.cabecalho as Record<string, unknown>) ?? {};
         const info = (registro.informacoes_adicionais as Record<string, unknown>) ?? {};
         const det = (registro.det as Record<string, unknown>[]) ?? [];
