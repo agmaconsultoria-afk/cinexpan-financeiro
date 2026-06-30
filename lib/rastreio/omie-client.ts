@@ -876,61 +876,58 @@ export async function listarNotasFiscais(
     for (const registro of lista) {
       if (fonte === "nfconsultar") {
         // ---- Parsing de produtos/nfconsultar ----
-        // info (ou ide): nNF, serie, dEmi, dCan | det[].prod | dest: xNome/CNPJ
-        const info = (registro.info as Record<string, unknown>) ?? {};
+        // Estrutura confirmada via ConsultarNF:
+        //   ide: nNF, serie, dEmi, dCan, cDeneg — cabeçalho da NF
+        //   nfDestInt: cRazao, cnpj_cpf — destinatário
+        //   det[].prod: xProd, qCom, vUnCom, vProd, uCom, CFOP
+        //   total.ICMSTot: vNF — total da NF
+        //   info: dInc, dAlt — apenas auditoria, NÃO contém nNF
+        //   compl: cCodCateg
         const ide = (registro.ide as Record<string, unknown>) ?? {};
         const compl = (registro.compl as Record<string, unknown>) ?? {};
         const det = (registro.det as Record<string, unknown>[]) ?? [];
-        const dest = (registro.dest as Record<string, unknown>) ?? {};
-        const totalObj = ((registro.total ?? registro.totais) as Record<string, unknown>) ?? {};
-        const totICMS = ((totalObj.ICMSTot ?? totalObj.icmsTot) as Record<string, unknown>) ?? {};
+        const destInt = (registro.nfDestInt as Record<string, unknown>) ?? (registro.dest as Record<string, unknown>) ?? {};
+        const totalObj = (registro.total as Record<string, unknown>) ?? {};
+        const totICMS = (totalObj.ICMSTot as Record<string, unknown>) ?? {};
 
-        // nNF pode estar em info, ide ou nível raiz
-        const nfNumRaw = (pega(info, "nNF") ?? pega(ide, "nNF") ?? pega(registro, "nNF") ?? "").toString();
-        if (!nfNumRaw || nfNumRaw === "0") continue;
+        // nNF fica em ide, já pode vir zerado em NFs inválidas
+        const nfNumRaw = (ide.nNF ?? "").toString().replace(/^0+/, "");
+        if (!nfNumRaw) continue;
         const nfNum = nfNumRaw.padStart(8, "0");
 
-        const serie = (pega(info, "serie") ?? pega(ide, "serie") ?? pega(registro, "serie") ?? "").toString();
-        const dataEmissao = dataIso(pega(info, "dEmi") ?? pega(ide, "dEmi") ?? pega(registro, "dEmi", "dEmissao")) ?? "";
-        const dCan = (pega(info, "dCan") ?? pega(ide, "dCan") ?? "").toString().trim();
-        const situacao = dCan ? "Cancelado" : "Autorizado";
-        const operacao = (pega(compl, "cCodCateg") ?? "").toString();
+        const serie = (ide.serie ?? "").toString();
+        const dataEmissao = dataIso(ide.dEmi) ?? "";
 
-        const clienteNome = (
-          pega(dest, "xNome", "cRazao") ??
-          pega(registro, "cRazao", "xNome") ?? ""
-        ).toString();
-        const clienteDoc = (
-          pega(dest, "CNPJ", "CPF", "cnpj_cpf") ??
-          pega(registro, "cnpj_cpf", "CNPJ", "CPF") ?? ""
-        ).toString();
+        // dCan não-vazio = cancelada; cDeneg="S" = denegada pela SEFAZ
+        const dCan = (ide.dCan ?? "").toString().trim();
+        const cDeneg = (ide.cDeneg ?? "").toString().toUpperCase();
+        const situacao = dCan ? "Cancelado" : cDeneg === "S" ? "Denegado" : "Autorizado";
+
+        const operacao = (compl.cCodCateg ?? "").toString();
+        const clienteNome = (pega(destInt, "cRazao", "xNome") ?? "").toString();
+        const clienteDoc = (pega(destInt, "cnpj_cpf", "CNPJ", "CPF") ?? "").toString();
 
         if (det.length > 0) {
           for (const item of det) {
             const prod = (item.prod as Record<string, unknown>) ?? {};
-            // CFOP vem como "1.403" — normaliza removendo o ponto
-            const cfopRaw = (pega(prod, "CFOP", "cfop", "cCFOP") ?? "").toString();
+            // CFOP vem como "5.101" — normaliza removendo o ponto
+            const cfopRaw = (pega(prod, "CFOP", "cfop") ?? "").toString();
             const cfop = cfopRaw.replace(".", "");
             itens.push({
               dataEmissao, nf: nfNum, serie,
               clienteNome: clienteNome || clienteDoc, clienteDoc,
-              produto: (pega(prod, "xProd", "cDescricao", "descricao") ?? "").toString(),
-              quantidade: num(pega(prod, "qCom", "nQtde", "quantidade") ?? 0),
-              unidade: (pega(prod, "uCom", "cUnidade", "unidade") ?? "").toString(),
-              valorUnitario: num(pega(prod, "vUnCom", "nValUnit", "valor_unitario") ?? 0),
-              totalMercadoria: num(pega(prod, "nCMCTotal", "vProd", "nValorTotal", "valor_total") ?? 0),
+              produto: (pega(prod, "xProd", "cDescricao") ?? "").toString(),
+              quantidade: num(pega(prod, "qCom") ?? 0),
+              unidade: (pega(prod, "uCom") ?? "").toString(),
+              valorUnitario: num(pega(prod, "vUnCom") ?? 0),
+              // nCMCTotal é CMC (custo), vProd é o valor real do produto
+              totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
               operacao, situacao, tags: "", cfop,
             });
           }
         } else {
-          // det vazio em modo listagem — cria uma linha resumo por NF
-          const valorNF = num(
-            pega(totICMS, "vNF", "vProd") ??
-            pega(totalObj, "vNF", "vProd") ??
-            pega(compl, "nValorNF", "vNF") ??
-            pega(registro, "nValorNF", "vNF", "valor_nf") ??
-            0
-          );
+          // det vazio em modo listagem — linha resumo por NF com total.ICMSTot.vNF
+          const valorNF = num(pega(totICMS, "vNF", "vProd") ?? 0);
           itens.push({
             dataEmissao, nf: nfNum, serie,
             clienteNome: clienteNome || clienteDoc, clienteDoc,
