@@ -962,6 +962,9 @@ export async function listarNotasFiscais(
 
         const operacao = (compl.cCodCateg ?? "").toString();
         const natOp = (ide.natOp ?? "").toString();
+        // Remessa e Devolução de Venda não são receita de venda — excluir
+        const natOpN = natOp.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+        if (natOpN.includes("REMESSA") || natOpN.includes("DEVOLUCAO")) continue;
         const clienteNome = (pega(destInt, "cRazao", "xNome") ?? "").toString();
         const clienteDoc = (pega(destInt, "cnpj_cpf", "CNPJ", "CPF") ?? "").toString();
 
