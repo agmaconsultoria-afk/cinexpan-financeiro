@@ -3,6 +3,7 @@ import { lerCredenciais, listarNotasFiscais, callOmie } from "@/lib/rastreio/omi
 import { exigirEdicao } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /**
  * GET /api/omie/notas-fiscais?competencia=YYYY-MM

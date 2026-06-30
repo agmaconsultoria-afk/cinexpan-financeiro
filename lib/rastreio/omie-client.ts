@@ -764,7 +764,7 @@ export async function listarNotasFiscais(
   let paginasProcessadas = 0;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
-    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 50 };
+    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 100 };
     if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
     if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
     return pm;
@@ -800,7 +800,7 @@ export async function listarNotasFiscais(
     try {
       const probe = await callOmie<Record<string, unknown>>(
         cred, "produtos/nfconsultar/", "ListarNF",
-        { pagina: 1, registros_por_pagina: 50 }
+        { pagina: 1, registros_por_pagina: 100 }
       );
       const ex = extrairNFResp(probe);
       totalPaginas = ex.pags;
@@ -810,14 +810,14 @@ export async function listarNotasFiscais(
 
       const deIso = brParaIso(opcoes.dataDe);
       if (deIso) {
-        // Busca binária: encontra a primeira página onde alguma NF é >= dataDe
+        // Busca binária sem sleep: log₂(1263) ≈ 10 chamadas para localizar a página inicial
         let low = 1, high = totalPaginas;
         while (low < high) {
           const mid = Math.floor((low + high) / 2);
           try {
             const rm = await callOmie<Record<string, unknown>>(
               cred, "produtos/nfconsultar/", "ListarNF",
-              { pagina: mid, registros_por_pagina: 50 }
+              { pagina: mid, registros_por_pagina: 100 }
             );
             const lm = extrairNFResp(rm).lista;
             const ideLast = (lm[lm.length - 1]?.ide as Record<string, unknown>) ?? {};
@@ -828,7 +828,7 @@ export async function listarNotasFiscais(
               high = mid;    // há NFs no período ou mais novas → pode estar aqui ou antes
             }
           } catch { low = mid + 1; }
-          await sleep(150);
+          // sem sleep entre passos — busca binária é rápida e não gera paginação pesada
         }
         // Recua 1 página para cobrir NFs de fronteira que podem ter datas fora de ordem
         pagina = Math.max(1, low - 1);
@@ -1087,7 +1087,8 @@ export async function listarNotasFiscais(
     }
     pagina++;
     if (pagina > totalPaginas) break;
-    await sleep(200);
+    // nfconsultar: sleep reduzido pois usamos 100 reg/página e busca binária já "aqueceu"
+    await sleep(fonte === "nfconsultar" ? 100 : 200);
   } while (pagina <= totalPaginas);
 
   // Pós-filtro por data de emissão — garante que, mesmo quando o filtro da API
