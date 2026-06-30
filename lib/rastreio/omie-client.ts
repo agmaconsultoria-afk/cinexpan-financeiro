@@ -730,6 +730,7 @@ export interface NotaFiscalItem {
   situacao: string;
   tags: string;
   cfop: string;
+  vencimento?: string;
 }
 
 function mapearSituacaoNF(raw: string): string {
@@ -752,10 +753,10 @@ export async function listarNotasFiscais(
   let totalNFs = 0;
   let truncado = false;
 
-  // Estratégia 1: produtos/nf ListarNFe (NF direta)
-  // Estratégia 2: pedido/pedido_venda_produto ListarPedidos (pedidos faturados, etapa 70)
-  // Tentamos NF direto primeiro; se falhar em qualquer erro HTTP/method, usamos pedidos.
-  type Fonte = "nf" | "pedido";
+  // Estratégia 1: produtos/nf ListarNFe
+  // Estratégia 2: pedido/pedido_venda_produto ListarPedidos (etapa 70 = faturado)
+  // Estratégia 3: financas/contareceber (fallback — módulos NF/pedido não disponíveis nesta conta)
+  type Fonte = "nf" | "pedido" | "financas";
   let fonte: Fonte = "nf";
   let fonteConfirmada = false;
 
@@ -768,11 +769,16 @@ export async function listarNotasFiscais(
 
   const buildParamPedido = (p: number): Record<string, unknown> => {
     const pm: Record<string, unknown> = {
-      pagina: p,
-      registros_por_pagina: 50,
-      apenas_importado_api: "N",
-      filtrar_por_etapa: "70", // etapa 70 = faturado
+      pagina: p, registros_por_pagina: 50,
+      apenas_importado_api: "N", filtrar_por_etapa: "70",
     };
+    if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
+    if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
+    return pm;
+  };
+
+  const buildParamCR = (p: number): Record<string, unknown> => {
+    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 50, apenas_importado_api: "N" };
     if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
     if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
     return pm;
@@ -782,7 +788,6 @@ export async function listarNotasFiscais(
     let lista: Record<string, unknown>[] = [];
 
     if (!fonteConfirmada) {
-      // Tenta NF direto; se falhar, usa pedidos
       try {
         const r = await callOmie<{
           nfCadastro?: Record<string, unknown>[];
@@ -792,21 +797,29 @@ export async function listarNotasFiscais(
         totalPaginas = r.total_de_paginas ?? 1;
         totalNFs = r.total_de_registros ?? 0;
         lista = r.nfCadastro ?? [];
-        fonte = "nf";
-        fonteConfirmada = true;
+        fonte = "nf"; fonteConfirmada = true;
       } catch {
-        // NF direto não disponível → usa pedidos de venda faturados
-        const r2 = await callOmie<{
-          pedido_venda_produto_lista?: Record<string, unknown>[];
-          lista_pedidos?: Record<string, unknown>[];
-          total_de_paginas?: number;
-          total_de_registros?: number;
-        }>(cred, "pedido/pedido_venda_produto/", "ListarPedidos", buildParamPedido(pagina));
-        totalPaginas = r2.total_de_paginas ?? 1;
-        totalNFs = r2.total_de_registros ?? 0;
-        lista = (r2.pedido_venda_produto_lista ?? r2.lista_pedidos ?? []) as Record<string, unknown>[];
-        fonte = "pedido";
-        fonteConfirmada = true;
+        try {
+          const r2 = await callOmie<{
+            pedido_venda_produto_lista?: Record<string, unknown>[];
+            lista_pedidos?: Record<string, unknown>[];
+            total_de_paginas?: number;
+            total_de_registros?: number;
+          }>(cred, "pedido/pedido_venda_produto/", "ListarPedidos", buildParamPedido(pagina));
+          totalPaginas = r2.total_de_paginas ?? 1;
+          totalNFs = r2.total_de_registros ?? 0;
+          lista = (r2.pedido_venda_produto_lista ?? r2.lista_pedidos ?? []) as Record<string, unknown>[];
+          fonte = "pedido"; fonteConfirmada = true;
+        } catch {
+          // Conta sem módulo NF/pedido → usa contas a receber como proxy
+          const r3 = await callOmie<ListarResponse>(
+            cred, "financas/contareceber/", "ListarContasReceber", buildParamCR(pagina)
+          );
+          totalPaginas = r3.total_de_paginas ?? 1;
+          totalNFs = r3.total_de_registros ?? 0;
+          lista = r3.conta_receber_cadastro ?? [];
+          fonte = "financas"; fonteConfirmada = true;
+        }
       }
     } else if (fonte === "nf") {
       const r = await callOmie<{
@@ -817,7 +830,7 @@ export async function listarNotasFiscais(
       totalPaginas = r.total_de_paginas ?? 1;
       totalNFs = r.total_de_registros ?? 0;
       lista = r.nfCadastro ?? [];
-    } else {
+    } else if (fonte === "pedido") {
       const r2 = await callOmie<{
         pedido_venda_produto_lista?: Record<string, unknown>[];
         lista_pedidos?: Record<string, unknown>[];
@@ -827,6 +840,13 @@ export async function listarNotasFiscais(
       totalPaginas = r2.total_de_paginas ?? 1;
       totalNFs = r2.total_de_registros ?? 0;
       lista = (r2.pedido_venda_produto_lista ?? r2.lista_pedidos ?? []) as Record<string, unknown>[];
+    } else {
+      const r3 = await callOmie<ListarResponse>(
+        cred, "financas/contareceber/", "ListarContasReceber", buildParamCR(pagina)
+      );
+      totalPaginas = r3.total_de_paginas ?? 1;
+      totalNFs = r3.total_de_registros ?? 0;
+      lista = r3.conta_receber_cadastro ?? [];
     }
 
     for (const registro of lista) {
@@ -861,14 +881,12 @@ export async function listarNotasFiscais(
             operacao, situacao, tags, cfop,
           });
         }
-      } else {
+      } else if (fonte === "pedido") {
         // ---- Parsing do formato Pedido de Venda (pedido/pedido_venda_produto) ----
         const cab = (registro.cabecalho as Record<string, unknown>) ?? {};
         const info = (registro.informacoes_adicionais as Record<string, unknown>) ?? {};
         const det = (registro.det as Record<string, unknown>[]) ?? [];
-
         const nfNumRaw = (pega(cab, "numero_nota", "nNF", "numero_pedido") ?? "").toString();
-        // Pedidos sem nota fiscal emitida são ignorados
         if (!nfNumRaw || nfNumRaw === "0") continue;
         const nfNum = nfNumRaw.padStart(8, "0");
         const serie = (pega(cab, "serie_nota", "serie") ?? "").toString();
@@ -877,8 +895,6 @@ export async function listarNotasFiscais(
         const clienteDoc = (pega(info, "cpf_cnpj_cliente", "cCPFCNPJ") ?? "").toString();
         const etapa = (pega(cab, "etapa") ?? "").toString();
         const situacao = etapa === "70" ? "Autorizado" : mapearSituacaoNF(etapa);
-        const operacao = "Pedido de Venda";
-
         for (const item of det) {
           const prod = (item.produto as Record<string, unknown>) ?? {};
           const cfop = (pega(prod, "cfop", "cCFOP") ?? "").toString();
@@ -890,9 +906,32 @@ export async function listarNotasFiscais(
             unidade: (pega(prod, "unidade", "cUnidade") ?? "").toString(),
             valorUnitario: num(pega(prod, "valor_unitario", "nValUnit") ?? 0),
             totalMercadoria: num(pega(prod, "valor_total", "nValorTotal") ?? 0),
-            operacao, situacao, tags: "", cfop,
+            operacao: "Pedido de Venda", situacao, tags: "", cfop,
           });
         }
+      } else {
+        // ---- Parsing de Contas a Receber (financas/contareceber) — proxy para NF ----
+        const conta = omieParaContaReceber(registro);
+        const nfNum = (conta.notaFiscal || conta.numeroDoc || "").toString();
+        if (!nfNum) continue;
+        const eCancelado = /cancel/i.test(conta.situacao);
+        itens.push({
+          dataEmissao: conta.dataEmissao ?? "",
+          nf: nfNum,
+          serie: conta.parcela || "",
+          clienteNome: conta.cliente || conta.clienteDoc || "",
+          clienteDoc: conta.clienteDoc || "",
+          produto: conta.categoria || conta.operacao || "",
+          quantidade: 0,
+          unidade: "",
+          valorUnitario: 0,
+          totalMercadoria: conta.valorConta,
+          operacao: conta.operacao || "",
+          situacao: eCancelado ? "Cancelado" : "Autorizado",
+          tags: conta.situacao, // status de pagamento no campo tags
+          cfop: "",
+          vencimento: conta.vencimento ?? "",
+        });
       }
     }
 
