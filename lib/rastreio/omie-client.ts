@@ -711,6 +711,126 @@ function brParaIso(s: string | undefined): string | null {
   return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : null;
 }
 
+// ===================== Notas Fiscais de Saída (produtos/nf) =====================
+
+export interface NotaFiscalItem {
+  dataEmissao: string; // ISO YYYY-MM-DD or ""
+  nf: string;
+  serie: string;
+  clienteNome: string;
+  clienteDoc: string;
+  produto: string;
+  quantidade: number;
+  unidade: string;
+  valorUnitario: number;
+  totalMercadoria: number;
+  operacao: string;
+  situacao: string;
+  tags: string;
+  cfop: string;
+}
+
+function mapearSituacaoNF(raw: string): string {
+  const v = raw.toUpperCase().replace(/[\s_]/g, "");
+  if (v === "S" || v === "AUTORIZADO" || v === "AUTORIZADA" || v === "NORMAL") return "Autorizado";
+  if (v === "C" || v === "CANCELADO" || v === "CANCELADA") return "Cancelado";
+  if (v === "E" || v === "DIGITACAO" || v === "EMDIGITACAO") return "Em digitação";
+  if (v === "D" || v === "DEVOLUCAO") return "Devolução";
+  return raw || "—";
+}
+
+export async function listarNotasFiscais(
+  cred: OmieCredenciais,
+  opcoes: { dataDe?: string; dataAte?: string; maxPaginas?: number } = {}
+): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean }> {
+  const maxPaginas = opcoes.maxPaginas ?? 60;
+  const itens: NotaFiscalItem[] = [];
+  let pagina = 1;
+  let totalPaginas = 1;
+  let totalNFs = 0;
+  let truncado = false;
+
+  do {
+    const param: Record<string, unknown> = {
+      pagina,
+      registros_por_pagina: 50,
+      apenas_importado_api: "N",
+    };
+    if (opcoes.dataDe) param.filtrar_por_data_de = opcoes.dataDe;
+    if (opcoes.dataAte) param.filtrar_por_data_ate = opcoes.dataAte;
+
+    const resp = await callOmie<{
+      nfCadastro?: Record<string, unknown>[];
+      total_de_paginas?: number;
+      total_de_registros?: number;
+    }>(cred, "produtos/nf/", "ListarNF", param);
+
+    totalPaginas = resp.total_de_paginas ?? 1;
+    totalNFs = resp.total_de_registros ?? 0;
+
+    for (const nf of resp.nfCadastro ?? []) {
+      const cab = (nf.cabecalho as Record<string, unknown>) ?? {};
+      const info = (nf.informacoes_adicionais as Record<string, unknown>) ?? {};
+      const det = (nf.det as Record<string, unknown>[]) ?? [];
+
+      const nfNumRaw = (pega(cab, "nNF", "numero_nf", "cNumNF") ?? "").toString();
+      const nfNum = nfNumRaw.padStart(8, "0");
+      const serie = (pega(cab, "serie", "cSerie") ?? "").toString();
+      const dataEmissao = dataIso(pega(cab, "dEmi", "data_emissao")) ?? "";
+      const clienteNome = (pega(cab, "cRazao", "razao_social", "cNome", "nome_cliente") ?? "").toString();
+      const clienteDoc = (pega(cab, "cCPFCNPJ", "cpf_cnpj", "cDocumento") ?? "").toString();
+      const operacao = (pega(cab, "cOperacao", "operacao", "cTipoOperacao") ?? "").toString();
+      const situacaoRaw = (pega(cab, "cSitNF", "situacao", "cStatus", "cSituacao") ?? "").toString();
+      const situacao = mapearSituacaoNF(situacaoRaw);
+
+      const tagsArr = (info.tags as Record<string, unknown>[]) ?? [];
+      const tags = tagsArr
+        .map((t) => (t.tag ?? t.cTag ?? "").toString())
+        .filter(Boolean)
+        .join(", ");
+
+      for (const item of det) {
+        const prod = (item.produto as Record<string, unknown>) ?? {};
+        const imp = (item.imposto as Record<string, unknown>) ?? {};
+        const icms = (imp.icms as Record<string, unknown>) ?? {};
+        const cfopRaw = (
+          pega(prod, "cfop", "cCFOP") ?? pega(icms, "cfop", "cCFOP") ?? ""
+        ).toString();
+
+        itens.push({
+          dataEmissao,
+          nf: nfNum,
+          serie,
+          clienteNome: clienteNome || clienteDoc,
+          clienteDoc,
+          produto: (pega(prod, "cDescricao", "descricao", "nome_produto") ?? "").toString(),
+          quantidade: num(pega(prod, "nQtde", "quantidade", "qtde") ?? 0),
+          unidade: (pega(prod, "cUnidade", "unidade") ?? "").toString(),
+          valorUnitario: num(pega(prod, "nValUnit", "valor_unitario", "nValorUnitario") ?? 0),
+          totalMercadoria: num(
+            pega(prod, "nValorTotal", "valor_total", "total_produto", "nTotProd") ?? 0
+          ),
+          operacao,
+          situacao,
+          tags,
+          cfop: cfopRaw,
+        });
+      }
+    }
+
+    if (pagina >= maxPaginas && pagina < totalPaginas) {
+      truncado = true;
+      break;
+    }
+    pagina++;
+    if (pagina <= totalPaginas) await sleep(200);
+  } while (pagina <= totalPaginas);
+
+  return { itens, totalNFs, truncado };
+}
+
+// ===================== Contas a Receber (financas/contareceber) =====================
+
 export async function listarContasReceber(
   cred: OmieCredenciais,
   opcoes: {
