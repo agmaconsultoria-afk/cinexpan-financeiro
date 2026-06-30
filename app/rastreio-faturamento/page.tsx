@@ -115,6 +115,9 @@ export default function RastreioFaturamentoPage() {
   // Drill-down: célula clicada (coluna + mês; mês null = total da competência).
   const [detalhe, setDetalhe] = useState<{ col: Coluna; mes: string | null } | null>(null);
 
+  // Mês atual no formato YYYY-MM — para ocultar "Ainda Falta Receber" em meses passados.
+  const mesAtual = new Date().toISOString().slice(0, 7);
+
   const pf = vendasPF[competencia] ?? 0;
   const dem = useMemo(
     () =>
@@ -377,7 +380,10 @@ export default function RastreioFaturamentoPage() {
                       <td className="px-4 py-2.5 text-left font-medium capitalize text-slate-700">
                         {l.rotulo}
                       </td>
-                      {celulaTd(l.aindaFaltaReceber, "falta", l.mes)}
+                      {/* Oculta "Ainda Falta Receber" em meses passados — saldo vencido já aparece em "Atrasado" */}
+                      {l.mes < mesAtual
+                        ? <td className="px-4 py-2.5 text-right text-slate-300">-</td>
+                        : celulaTd(l.aindaFaltaReceber, "falta", l.mes)}
                       {celulaTd(l.jaRecebido, "recebido", l.mes, "text-emerald-700")}
                       {celulaTd(l.descontos, "descontos", l.mes, "text-rose-600")}
                       {celulaTd(l.multaJuros, "juros", l.mes)}
@@ -388,7 +394,13 @@ export default function RastreioFaturamentoPage() {
                 <tfoot>
                   <tr className="bg-brand-50 font-bold tabular-nums text-brand-900">
                     <td className="px-4 py-3 text-left">Total</td>
-                    <td className="px-4 py-3 text-right">{formatarMoeda(dem.totais.aindaFaltaReceber)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {formatarMoeda(
+                        dem.linhas
+                          .filter((l) => l.mes >= mesAtual)
+                          .reduce((s, l) => s + l.aindaFaltaReceber, 0)
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right">{formatarMoeda(dem.totais.jaRecebido)}</td>
                     <td className="px-4 py-3 text-right">{formatarMoeda(dem.totais.descontos)}</td>
                     <td className="px-4 py-3 text-right">{formatarMoeda(dem.totais.multaJuros)}</td>
