@@ -766,10 +766,7 @@ export async function listarNotasFiscais(
   let paginasProcessadas = 0;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
-    const pm: Record<string, unknown> = {
-      pagina: p, registros_por_pagina: 100,
-      apenas_nfe_autorizadas: "S",  // só NF-e com status Autorizado
-    };
+    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 100 };
     if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
     if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
     return pm;
