@@ -761,6 +761,8 @@ export async function listarNotasFiscais(
   type Fonte = "nfconsultar" | "nf" | "pedido" | "financas";
   let fonte: Fonte = "nfconsultar";
   let fonteConfirmada = false;
+  let paginaStep = 1;       // -1 para paginação reversa no nfconsultar
+  let paginasProcessadas = 0;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
     const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 50 };
@@ -790,6 +792,27 @@ export async function listarNotasFiscais(
   function extrairNFResp(r: Record<string, unknown>): { lista: Record<string, unknown>[]; pags: number; total: number } {
     const lista = (r.nfCadastro ?? r.nfRetorno ?? r.listaNF ?? r.lista ?? []) as Record<string, unknown>[];
     return { lista, pags: (r.total_de_paginas as number) ?? 1, total: (r.total_de_registros as number) ?? 0 };
+  }
+
+  // nfconsultar ignora filtrar_por_data_de — retorna 126k+ NFs em ordem crescente de nNF.
+  // Jan/2026 está nas últimas páginas (~2526). Fazemos uma chamada de sondagem para
+  // obter total_de_paginas e então paginamos de trás para frente.
+  if (opcoes.dataDe || opcoes.dataAte) {
+    try {
+      const probe = await callOmie<Record<string, unknown>>(
+        cred, "produtos/nfconsultar/", "ListarNF",
+        { pagina: 1, registros_por_pagina: 50 }
+      );
+      const ex = extrairNFResp(probe);
+      totalPaginas = ex.pags;
+      totalNFs = ex.total;
+      pagina = totalPaginas;  // começa da última página (NFs mais recentes)
+      paginaStep = -1;
+      fonte = "nfconsultar";
+      fonteConfirmada = true;
+    } catch {
+      // nfconsultar indisponível — loop principal tentará produtos/nf, pedido, financas
+    }
   }
 
   do {
@@ -1021,10 +1044,27 @@ export async function listarNotasFiscais(
       }
     }
 
-    if (pagina >= maxPaginas && pagina < totalPaginas) { truncado = true; break; }
-    pagina++;
-    if (pagina <= totalPaginas) await sleep(200);
-  } while (pagina <= totalPaginas);
+    paginasProcessadas++;
+
+    // Early stop em paginação reversa: quando a NF mais recente desta página já é
+    // anterior a dataDe, todas as páginas anteriores serão ainda mais antigas.
+    if (paginaStep === -1 && opcoes.dataDe) {
+      const deIso = brParaIso(opcoes.dataDe);
+      if (deIso && lista.length > 0) {
+        const ideLast = (lista[lista.length - 1]?.ide as Record<string, unknown>) ?? {};
+        const dataUltima = dataIso(ideLast.dEmi);
+        if (dataUltima && dataUltima < deIso) break;
+      }
+    }
+
+    if (paginasProcessadas >= maxPaginas) {
+      truncado = paginaStep === -1 ? pagina > 1 : pagina < totalPaginas;
+      break;
+    }
+    pagina += paginaStep;
+    if (pagina < 1 || pagina > totalPaginas) break;
+    await sleep(200);
+  } while (paginaStep === -1 ? pagina >= 1 : pagina <= totalPaginas);
 
   // Pós-filtro por data de emissão — garante que, mesmo quando o filtro da API
   // é ignorado, só chegam ao cliente os itens do período solicitado.
