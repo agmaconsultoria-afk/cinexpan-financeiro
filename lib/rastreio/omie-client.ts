@@ -960,6 +960,8 @@ export async function listarNotasFiscais(
             // CFOP vem como "5.101" — normaliza removendo o ponto
             const cfopRaw = (pega(prod, "CFOP", "cfop") ?? "").toString();
             const cfop = cfopRaw.replace(".", "");
+            // 1.xxx / 2.xxx = entrada (devolução, retorno) — exclui do faturamento de saída
+            if (cfop && /^[12]/.test(cfop)) continue;
             itens.push({
               dataEmissao, nf: nfNum, serie,
               clienteNome: clienteNome || clienteDoc, clienteDoc,
@@ -973,8 +975,8 @@ export async function listarNotasFiscais(
             });
           }
         } else {
-          // det vazio em modo listagem — linha resumo por NF com total.ICMSTot.vNF
-          const valorNF = num(pega(totICMS, "vNF", "vProd") ?? 0);
+          // det vazio em modo listagem — linha resumo por NF com total.ICMSTot.vProd
+          const valorNF = num(pega(totICMS, "vProd", "vNF") ?? 0);
           itens.push({
             dataEmissao, nf: nfNum, serie,
             clienteNome: clienteNome || clienteDoc, clienteDoc,

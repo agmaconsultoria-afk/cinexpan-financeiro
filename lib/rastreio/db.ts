@@ -76,6 +76,16 @@ async function criarSchema(): Promise<void> {
   await pool.query(`
     ALTER TABLE rastreio_faturamento ADD COLUMN IF NOT EXISTS faturamento_omie NUMERIC;
   `);
+  // Histórico de processamentos Omie
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS omie_historico_processamento (
+      id             SERIAL PRIMARY KEY,
+      mes            TEXT NOT NULL,
+      total_nfs      INTEGER NOT NULL DEFAULT 0,
+      total_faturado NUMERIC NOT NULL DEFAULT 0,
+      processado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 
   // Seeds de faturamento/vendas PF (uma vez; nunca sobrescreve edições).
   await semearMapa("rastreio_faturamento", FATURAMENTO_SEED);
@@ -401,4 +411,51 @@ export async function diagnosticoClientes() {
     exemplos,
     amostraCache,
   };
+}
+
+// ----- Histórico de processamentos Omie -----
+
+export interface HistoricoProcessamento {
+  id: number;
+  mes: string;
+  totalNFs: number;
+  totalFaturado: number;
+  processadoEm: string;
+}
+
+export async function gravarHistoricoOmie(
+  mes: string,
+  totalNFs: number,
+  totalFaturado: number
+): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `INSERT INTO omie_historico_processamento (mes, total_nfs, total_faturado)
+     VALUES ($1, $2, $3)`,
+    [mes, totalNFs, totalFaturado]
+  );
+}
+
+export async function lerHistoricoOmie(limite = 50): Promise<HistoricoProcessamento[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query<{
+    id: number;
+    mes: string;
+    total_nfs: number;
+    total_faturado: string;
+    processado_em: Date;
+  }>(
+    `SELECT id, mes, total_nfs, total_faturado, processado_em
+     FROM omie_historico_processamento
+     ORDER BY processado_em DESC
+     LIMIT $1`,
+    [limite]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    mes: r.mes,
+    totalNFs: Number(r.total_nfs),
+    totalFaturado: Number(r.total_faturado),
+    processadoEm: r.processado_em instanceof Date ? r.processado_em.toISOString() : String(r.processado_em),
+  }));
 }

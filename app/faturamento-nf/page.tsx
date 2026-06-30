@@ -1,13 +1,33 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Receipt, FileX, CheckCircle2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Search, Receipt, FileX, CheckCircle2, History, Clock } from "lucide-react";
 import { KpiCard } from "@/components/KpiCard";
 import { PageHeader } from "@/components/ui";
 import { SeletorMes } from "@/components/SeletorMes";
 import { formatarMoeda } from "@/lib/format";
+import { rotuloMesAno } from "@/lib/rastreio/logic";
 import { DollarSign, Hash, Save } from "lucide-react";
 import { useRastreio } from "@/lib/rastreio/context";
+
+interface HistoricoItem {
+  id: number;
+  mes: string;
+  totalNFs: number;
+  totalFaturado: number;
+  processadoEm: string;
+}
+
+function formatarDataHora(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("pt-BR", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
 
 export default function FaturamentoNFPage() {
   const { setFaturamentoOmieMes } = useRastreio();
@@ -23,6 +43,26 @@ export default function FaturamentoNFPage() {
   const [buscou, setBuscou] = useState(false);
   const [gravado, setGravado] = useState(false);
   const [mesGravado, setMesGravado] = useState("");
+
+  const [historico, setHistorico] = useState<HistoricoItem[]>([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+
+  const carregarHistorico = useCallback(async () => {
+    setCarregandoHistorico(true);
+    try {
+      const res = await fetch("/api/omie/historico");
+      const data = await res.json();
+      if (data.ok) setHistorico(data.historico ?? []);
+    } catch {
+      /* silencioso */
+    } finally {
+      setCarregandoHistorico(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    carregarHistorico();
+  }, [carregarHistorico]);
 
   async function buscar() {
     setCarregando(true);
@@ -48,23 +88,32 @@ export default function FaturamentoNFPage() {
   }
 
   async function gravarNoFaturamento() {
-    if (totalMerc === null) return;
+    if (totalMerc === null || totalNFs === null) return;
     setGravando(true);
     setErro("");
     try {
-      const res = await fetch("/api/rastreio/faturamento", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mes: competencia, faturamentoOmie: totalMerc }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        setErro(data.erro ?? "Erro ao gravar.");
+      const [resFat, resHist] = await Promise.all([
+        fetch("/api/rastreio/faturamento", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mes: competencia, faturamentoOmie: totalMerc }),
+        }),
+        fetch("/api/omie/historico", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mes: competencia, totalNFs, totalFaturado: totalMerc }),
+        }),
+      ]);
+      const dataFat = await resFat.json();
+      if (!dataFat.ok) {
+        setErro(dataFat.erro ?? "Erro ao gravar.");
         return;
       }
+      await resHist.json();
       setFaturamentoOmieMes(competencia, totalMerc);
       setMesGravado(competencia);
       setGravado(true);
+      await carregarHistorico();
     } catch {
       setErro("Erro de conexão ao gravar.");
     } finally {
@@ -138,7 +187,7 @@ export default function FaturamentoNFPage() {
           )}
 
           {(totalNFs ?? 0) > 0 && (
-            <div className="card px-6 py-5">
+            <div className="card mb-6 px-6 py-5">
               {gravado && mesGravado === competencia ? (
                 <div className="flex items-center gap-3 text-emerald-700">
                   <CheckCircle2 className="h-5 w-5 shrink-0" />
@@ -171,6 +220,57 @@ export default function FaturamentoNFPage() {
           )}
         </>
       )}
+
+      {/* Histórico de processamentos */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-4">
+          <History className="h-4 w-4 text-brand-600" />
+          <span className="text-sm font-medium text-slate-700">Histórico de processamentos</span>
+        </div>
+        {carregandoHistorico ? (
+          <div className="flex items-center justify-center py-10">
+            <div className="h-6 w-6 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+          </div>
+        ) : historico.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-12 text-center">
+            <Clock className="h-8 w-8 text-slate-300" />
+            <p className="text-sm text-slate-400">Nenhum processamento registrado ainda.</p>
+          </div>
+        ) : (
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr className="border-b border-slate-200 text-left text-slate-500">
+                  <th className="px-5 py-3 font-medium">Competência</th>
+                  <th className="px-3 py-3 text-right font-medium">NFs</th>
+                  <th className="px-3 py-3 text-right font-medium">Total faturado (R$)</th>
+                  <th className="px-3 py-3 font-medium">Processado em</th>
+                  <th className="w-full" />
+                </tr>
+              </thead>
+              <tbody>
+                {historico.map((h) => (
+                  <tr key={h.id} className="border-b border-slate-100 last:border-0">
+                    <td className="whitespace-nowrap px-5 py-2 font-medium capitalize text-slate-700">
+                      {rotuloMesAno(h.mes)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">
+                      {h.totalNFs}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">
+                      {formatarMoeda(h.totalFaturado)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-500">
+                      {formatarDataHora(h.processadoEm)}
+                    </td>
+                    <td className="w-full" />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
