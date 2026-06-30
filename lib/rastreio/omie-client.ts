@@ -868,8 +868,52 @@ export async function listarNotasFiscais(
     }
 
     for (const registro of lista) {
-      if (fonte === "nfconsultar" || fonte === "nf") {
-        // ---- Parsing do formato NF direto (produtos/nf) ----
+      if (fonte === "nfconsultar") {
+        // ---- Parsing de produtos/nfconsultar (estrutura real confirmada pelo debug) ----
+        // info: nNF, serie, dEmi, dCan, tpNF
+        // det[].prod: xProd, qCom, vUnCom, nCMCTotal, uCom, CFOP (maiúsculo)
+        // cRazao / cnpj_cpf / nCodCli: top-level ou em sub-objeto dest
+        const info = (registro.info as Record<string, unknown>) ?? {};
+        const compl = (registro.compl as Record<string, unknown>) ?? {};
+        const det = (registro.det as Record<string, unknown>[]) ?? [];
+        const dest = (registro.dest as Record<string, unknown>) ?? {};
+
+        const nfNum = (info.nNF ?? "").toString().padStart(8, "0");
+        if (!nfNum || nfNum === "00000000") continue;
+        const serie = (info.serie ?? "").toString();
+        const dataEmissao = dataIso(info.dEmi) ?? "";
+        const dCan = (info.dCan ?? "").toString().trim();
+        const situacao = dCan ? "Cancelado" : "Autorizado";
+        const operacao = (compl.cCodCateg ?? "").toString();
+
+        // Cliente: tenta dest.xNome, dest.cRazao, top-level cRazao
+        const clienteNome = (
+          pega(dest, "xNome", "cRazao") ??
+          pega(registro, "cRazao") ?? ""
+        ).toString();
+        const clienteDoc = (
+          pega(dest, "CNPJ", "CPF", "cnpj_cpf") ??
+          pega(registro, "cnpj_cpf") ?? ""
+        ).toString();
+
+        for (const item of det) {
+          const prod = (item.prod as Record<string, unknown>) ?? {};
+          // CFOP vem como "1.403" — normaliza removendo o ponto
+          const cfopRaw = (pega(prod, "CFOP", "cfop", "cCFOP") ?? "").toString();
+          const cfop = cfopRaw.replace(".", "");
+          itens.push({
+            dataEmissao, nf: nfNum, serie,
+            clienteNome: clienteNome || clienteDoc, clienteDoc,
+            produto: (pega(prod, "xProd", "cDescricao", "descricao") ?? "").toString(),
+            quantidade: num(pega(prod, "qCom", "nQtde", "quantidade") ?? 0),
+            unidade: (pega(prod, "uCom", "cUnidade", "unidade") ?? "").toString(),
+            valorUnitario: num(pega(prod, "vUnCom", "nValUnit", "valor_unitario") ?? 0),
+            totalMercadoria: num(pega(prod, "nCMCTotal", "nValorTotal", "valor_total") ?? 0),
+            operacao, situacao, tags: "", cfop,
+          });
+        }
+      } else if (fonte === "nf") {
+        // ---- Parsing do formato NF direto (produtos/nf/ListarNFe) ----
         const cab = (registro.cabecalho as Record<string, unknown>) ?? {};
         const info = (registro.informacoes_adicionais as Record<string, unknown>) ?? {};
         const det = (registro.det as Record<string, unknown>[]) ?? [];
