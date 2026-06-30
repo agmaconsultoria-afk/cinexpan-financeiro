@@ -72,6 +72,10 @@ async function criarSchema(): Promise<void> {
       valor  TEXT
     );
   `);
+  // Migração: adiciona coluna faturamento_omie se ainda não existir
+  await pool.query(`
+    ALTER TABLE rastreio_faturamento ADD COLUMN IF NOT EXISTS faturamento_omie NUMERIC;
+  `);
 
   // Seeds de faturamento/vendas PF (uma vez; nunca sobrescreve edições).
   await semearMapa("rastreio_faturamento", FATURAMENTO_SEED);
@@ -167,6 +171,7 @@ export interface DadosArmazenados {
   emitidoEm: string | null;
   faturamento: Record<string, number>;
   vendasPF: Record<string, number>;
+  faturamentoOmie: Record<string, number>;
 }
 
 // ----- API de dados -----
@@ -216,12 +221,13 @@ export async function lerTudo(): Promise<DadosArmazenados> {
   }));
   const emitidoEm = comp.rows.map((r) => r.emitido_em).filter(Boolean).slice(-1)[0] ?? null;
 
-  const [fat, pf] = await Promise.all([
+  const [fat, pf, fatOmie] = await Promise.all([
     lerMapa("rastreio_faturamento"),
     lerMapa("rastreio_vendas_pf"),
+    lerMapaOmie(),
   ]);
 
-  return { contas, competenciasMeta, emitidoEm, faturamento: fat, vendasPF: pf };
+  return { contas, competenciasMeta, emitidoEm, faturamento: fat, vendasPF: pf, faturamentoOmie: fatOmie };
 }
 
 async function lerMapa(tabela: string): Promise<Record<string, number>> {
@@ -234,11 +240,30 @@ async function lerMapa(tabela: string): Promise<Record<string, number>> {
   return mapa;
 }
 
+async function lerMapaOmie(): Promise<Record<string, number>> {
+  const pool = getPool();
+  const { rows } = await pool.query<{ mes: string; faturamento_omie: string | null }>(
+    `SELECT mes, faturamento_omie FROM rastreio_faturamento WHERE faturamento_omie IS NOT NULL`
+  );
+  const mapa: Record<string, number> = {};
+  for (const r of rows) if (r.faturamento_omie !== null) mapa[r.mes] = Number(r.faturamento_omie);
+  return mapa;
+}
+
 export async function setFaturamento(mes: string, valor: number): Promise<void> {
   await ensureSchema();
   await getPool().query(
     `INSERT INTO rastreio_faturamento (mes, valor) VALUES ($1, $2)
      ON CONFLICT (mes) DO UPDATE SET valor = EXCLUDED.valor`,
+    [mes, valor]
+  );
+}
+
+export async function setFaturamentoOmie(mes: string, valor: number): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `INSERT INTO rastreio_faturamento (mes, valor, faturamento_omie) VALUES ($1, 0, $2)
+     ON CONFLICT (mes) DO UPDATE SET faturamento_omie = EXCLUDED.faturamento_omie`,
     [mes, valor]
   );
 }

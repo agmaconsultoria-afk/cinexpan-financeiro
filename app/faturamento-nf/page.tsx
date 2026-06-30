@@ -1,29 +1,34 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Search, Receipt, FileX, PencilLine } from "lucide-react";
+import { Search, Receipt, FileX, CheckCircle2 } from "lucide-react";
 import { KpiCard } from "@/components/KpiCard";
 import { PageHeader } from "@/components/ui";
 import { SeletorMes } from "@/components/SeletorMes";
 import { formatarMoeda } from "@/lib/format";
-import { DollarSign, Hash } from "lucide-react";
+import { DollarSign, Hash, Save } from "lucide-react";
+import { useRastreio } from "@/lib/rastreio/context";
 
 export default function FaturamentoNFPage() {
-  const router = useRouter();
+  const { setFaturamentoOmieMes } = useRastreio();
+
   const [competencia, setCompetencia] = useState(
     () => new Date().toISOString().slice(0, 7)
   );
   const [carregando, setCarregando] = useState(false);
+  const [gravando, setGravando] = useState(false);
   const [erro, setErro] = useState("");
   const [totalNFs, setTotalNFs] = useState<number | null>(null);
   const [totalMerc, setTotalMerc] = useState<number | null>(null);
   const [buscou, setBuscou] = useState(false);
+  const [gravado, setGravado] = useState(false);
+  const [mesGravado, setMesGravado] = useState("");
 
   async function buscar() {
     setCarregando(true);
     setErro("");
     setBuscou(false);
+    setGravado(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
       const data = await res.json();
@@ -42,6 +47,31 @@ export default function FaturamentoNFPage() {
     }
   }
 
+  async function gravarNoFaturamento() {
+    if (totalMerc === null) return;
+    setGravando(true);
+    setErro("");
+    try {
+      const res = await fetch("/api/rastreio/faturamento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mes: competencia, faturamentoOmie: totalMerc }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setErro(data.erro ?? "Erro ao gravar.");
+        return;
+      }
+      setFaturamentoOmieMes(competencia, totalMerc);
+      setMesGravado(competencia);
+      setGravado(true);
+    } catch {
+      setErro("Erro de conexão ao gravar.");
+    } finally {
+      setGravando(false);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -49,7 +79,7 @@ export default function FaturamentoNFPage() {
         subtitulo="Notas fiscais de saída emitidas no Omie"
         acoes={
           <div className="flex items-center gap-2">
-            <SeletorMes value={competencia} onChange={setCompetencia} />
+            <SeletorMes value={competencia} onChange={(v) => { setCompetencia(v); setBuscou(false); setGravado(false); }} />
             <button
               onClick={buscar}
               disabled={carregando}
@@ -107,19 +137,38 @@ export default function FaturamentoNFPage() {
             </div>
           )}
 
-          <div className="card flex items-center justify-between gap-4 px-6 py-5">
-            <div>
-              <p className="font-medium text-slate-800">Lançar faturamento</p>
-              <p className="text-sm text-slate-500">Registre manualmente os dados de faturamento no sistema.</p>
+          {(totalNFs ?? 0) > 0 && (
+            <div className="card px-6 py-5">
+              {gravado && mesGravado === competencia ? (
+                <div className="flex items-center gap-3 text-emerald-700">
+                  <CheckCircle2 className="h-5 w-5 shrink-0" />
+                  <div>
+                    <p className="font-medium">Gravado com sucesso!</p>
+                    <p className="text-sm text-emerald-600">
+                      {formatarMoeda(totalMerc ?? 0)} salvo como "Faturamento Omie" em Lançar Faturamento.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-medium text-slate-800">Gravar no Faturamento</p>
+                    <p className="text-sm text-slate-500">
+                      Salva <strong>{formatarMoeda(totalMerc ?? 0)}</strong> como "Faturamento Omie" para comparar com o lançado manualmente.
+                    </p>
+                  </div>
+                  <button
+                    onClick={gravarNoFaturamento}
+                    disabled={gravando}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+                  >
+                    <Save className="h-4 w-4" />
+                    {gravando ? "Gravando..." : "Gravar no Faturamento"}
+                  </button>
+                </div>
+              )}
             </div>
-            <button
-              onClick={() => router.push("/lancar-faturamento")}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
-            >
-              <PencilLine className="h-4 w-4" />
-              Ir para Lançar Faturamento
-            </button>
-          </div>
+          )}
         </>
       )}
     </div>

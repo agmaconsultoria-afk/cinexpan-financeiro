@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setFaturamento, setVendasPF } from "@/lib/rastreio/db";
+import { setFaturamento, setVendasPF, setFaturamentoOmie } from "@/lib/rastreio/db";
 import { exigirEdicao } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     }
     if (typeof body.faturamento === "number") await setFaturamento(mes, body.faturamento);
     if (typeof body.vendasPF === "number") await setVendasPF(mes, body.vendasPF);
+    if (typeof body.faturamentoOmie === "number") await setFaturamentoOmie(mes, body.faturamentoOmie);
     return NextResponse.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro ao gravar.";

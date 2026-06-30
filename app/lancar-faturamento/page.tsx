@@ -51,7 +51,7 @@ function CampoMoeda({
 }
 
 export default function LancarFaturamentoPage() {
-  const { faturamento, setFaturamentoMes, vendasPF, setVendasPFMes, carregarDoBanco } = useRastreio();
+  const { faturamento, setFaturamentoMes, vendasPF, setVendasPFMes, faturamentoOmie, carregarDoBanco } = useRastreio();
   const [novoMes, setNovoMes] = useState(() => new Date().toISOString().slice(0, 7));
   const inputArquivo = useRef<HTMLInputElement>(null);
   const [importando, setImportando] = useState(false);
@@ -102,6 +102,7 @@ export default function LancarFaturamentoPage() {
 
   const totalFat = meses.reduce((a, m) => a + (faturamento[m] ?? 0), 0);
   const totalPF = meses.reduce((a, m) => a + (vendasPF[m] ?? 0), 0);
+  const temOmie = meses.some((m) => faturamentoOmie[m] != null);
 
   return (
     <div>
@@ -161,6 +162,8 @@ export default function LancarFaturamentoPage() {
               <tr className="border-b border-slate-200 text-left text-slate-500">
                 <th className="px-5 py-3 font-medium">Competência</th>
                 <th className="px-3 py-3 text-right font-medium">Faturamento do mês (R$)</th>
+                {temOmie && <th className="px-3 py-3 text-right font-medium">Faturamento Omie (R$)</th>}
+                {temOmie && <th className="px-3 py-3 text-right font-medium">Diferença</th>}
                 <th className="px-3 py-3 text-right font-medium">Vendas PF (R$)</th>
                 <th className="w-full" />
               </tr>
@@ -168,34 +171,52 @@ export default function LancarFaturamentoPage() {
             <tbody>
               {meses.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-8 text-center text-slate-400">
-                    Nenhuma competência lançada. Use “Adicionar mês” para começar.
+                  <td colSpan={temOmie ? 6 : 4} className="px-5 py-8 text-center text-slate-400">
+                    Nenhuma competência lançada. Use "Adicionar mês" para começar.
                   </td>
                 </tr>
               )}
-              {meses.map((m) => (
-                <tr key={m} className="border-b border-slate-100 last:border-0">
-                  <td className="whitespace-nowrap px-5 py-2 font-medium capitalize text-slate-700">
-                    {rotuloMesAno(m)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <CampoMoeda
-                      valor={faturamento[m] ?? 0}
-                      onSalvar={(n) => setFaturamentoMes(m, n)}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <CampoMoeda valor={vendasPF[m] ?? 0} onSalvar={(n) => setVendasPFMes(m, n)} />
-                  </td>
-                  <td className="w-full" />
-                </tr>
-              ))}
+              {meses.map((m) => {
+                const omie = faturamentoOmie[m];
+                const manual = faturamento[m] ?? 0;
+                const diff = omie != null ? omie - manual : null;
+                const diffCor = diff == null ? "" : diff !== 0 && diff > 0 ? "text-emerald-600" : diff !== 0 ? "text-rose-600" : "text-slate-500";
+                const diffLabel = diff == null ? "—" : diff === 0 ? "=" : (diff > 0 ? "+" : "") + formatarMoeda(diff);
+                return (
+                  <tr key={m} className="border-b border-slate-100 last:border-0">
+                    <td className="whitespace-nowrap px-5 py-2 font-medium capitalize text-slate-700">
+                      {rotuloMesAno(m)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <CampoMoeda
+                        valor={manual}
+                        onSalvar={(n) => setFaturamentoMes(m, n)}
+                      />
+                    </td>
+                    {temOmie && (
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">
+                        {omie != null ? formatarMoeda(omie) : <span className="text-slate-300">—</span>}
+                      </td>
+                    )}
+                    {temOmie && (
+                      <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums text-sm font-medium ${diffCor}`}>
+                        <span className={diff == null ? "text-slate-300" : ""}>{diffLabel}</span>
+                      </td>
+                    )}
+                    <td className="px-3 py-2 text-right">
+                      <CampoMoeda valor={vendasPF[m] ?? 0} onSalvar={(n) => setVendasPFMes(m, n)} />
+                    </td>
+                    <td className="w-full" />
+                  </tr>
+                );
+              })}
             </tbody>
             {meses.length > 0 && (
               <tfoot className="sticky bottom-0 bg-slate-50">
                 <tr className="border-t border-slate-200 font-semibold text-slate-800">
                   <td className="px-5 py-3">Total</td>
                   <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(totalFat)}</td>
+                  {temOmie && <td colSpan={2} />}
                   <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(totalPF)}</td>
                   <td className="w-full" />
                 </tr>
@@ -206,7 +227,7 @@ export default function LancarFaturamentoPage() {
       </div>
 
       <p className="mt-4 text-sm text-slate-500">
-        O <strong>Faturamento do mês</strong> é o denominador do “% rastreado” no Rastreio de
+        O <strong>Faturamento do mês</strong> é o denominador do "% rastreado" no Rastreio de
         Faturamento. As <strong>Vendas PF</strong> (consumidor final) entram no total rastreado.
         Esses valores também podem ser editados direto na tela do Rastreio, clicando sobre eles.
       </p>

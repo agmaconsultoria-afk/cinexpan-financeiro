@@ -29,6 +29,8 @@ interface RastreioContextValor {
   setFaturamentoMes: (mes: string, valor: number) => void;
   vendasPF: FaturamentoMensal;
   setVendasPFMes: (mes: string, valor: number) => void;
+  faturamentoOmie: FaturamentoMensal;
+  setFaturamentoOmieMes: (mes: string, valor: number) => void;
   carregarDoBanco: () => Promise<void>;
   voltarParaExemplo: () => void;
 }
@@ -44,6 +46,7 @@ export function RastreioProvider({ children }: { children: React.ReactNode }) {
   const [visao, setVisao] = useState<Visao>("Recebimento");
   const [faturamento, setFaturamento] = useState<FaturamentoMensal>(FATURAMENTO_SEED);
   const [vendasPF, setVendasPF] = useState<FaturamentoMensal>(VENDAS_PF_SEED);
+  const [faturamentoOmie, setFaturamentoOmieState] = useState<FaturamentoMensal>({});
 
   // Carrega o histórico acumulado da base (servidor).
   const carregarDoBanco = useCallback(async () => {
@@ -53,6 +56,7 @@ export function RastreioProvider({ children }: { children: React.ReactNode }) {
       if (dados?.ok) {
         if (dados.faturamento) setFaturamento(dados.faturamento);
         if (dados.vendasPF) setVendasPF(dados.vendasPF);
+        if (dados.faturamentoOmie) setFaturamentoOmieState(dados.faturamentoOmie);
         if (Array.isArray(dados.contas) && dados.contas.length > 0) {
           setContasRaw(dados.contas);
           setEmitidoEm(dados.emitidoEm ?? null);
@@ -108,6 +112,15 @@ export function RastreioProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
   }, []);
 
+  const setFaturamentoOmieMes = useCallback((mes: string, valor: number) => {
+    setFaturamentoOmieState((prev) => ({ ...prev, [mes]: valor }));
+    fetch("/api/rastreio/faturamento", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mes, faturamentoOmie: valor }),
+    }).catch(() => {});
+  }, []);
+
   const valor: RastreioContextValor = {
     contas,
     fonte,
@@ -122,6 +135,8 @@ export function RastreioProvider({ children }: { children: React.ReactNode }) {
     setFaturamentoMes,
     vendasPF,
     setVendasPFMes,
+    faturamentoOmie,
+    setFaturamentoOmieMes,
     carregarDoBanco,
     voltarParaExemplo,
   };
