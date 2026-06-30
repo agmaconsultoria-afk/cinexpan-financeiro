@@ -957,6 +957,8 @@ export async function listarNotasFiscais(
         const dCan = (ide.dCan ?? "").toString().trim();
         const cDeneg = (ide.cDeneg ?? "").toString().toUpperCase();
         const situacao = dCan ? "Cancelado" : cDeneg === "S" ? "Denegado" : "Autorizado";
+        // Canceladas e denegadas não entram no faturamento
+        if (situacao !== "Autorizado") continue;
 
         const operacao = (compl.cCodCateg ?? "").toString();
         const natOp = (ide.natOp ?? "").toString();
