@@ -69,6 +69,8 @@ export async function GET(req: NextRequest) {
       totalNFs: resultado.totalNFs,
       truncado: resultado.truncado,
       itens: resultado.itens,
+      // Incluído apenas quando itens = 0 — ajuda a diagnosticar estrutura real da API
+      ...(resultado.primeiroRegistroBruto !== undefined ? { primeiroRegistroBruto: resultado.primeiroRegistroBruto } : {}),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro desconhecido ao consultar NFs.";

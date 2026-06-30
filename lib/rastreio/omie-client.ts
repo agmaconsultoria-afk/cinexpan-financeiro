@@ -745,9 +745,10 @@ function mapearSituacaoNF(raw: string): string {
 export async function listarNotasFiscais(
   cred: OmieCredenciais,
   opcoes: { dataDe?: string; dataAte?: string; maxPaginas?: number } = {}
-): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean; fonte: string }> {
+): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean; fonte: string; primeiroRegistroBruto?: unknown }> {
   const maxPaginas = opcoes.maxPaginas ?? 60;
   const itens: NotaFiscalItem[] = [];
+  let primeiroRegistroBruto: unknown;
   let pagina = 1;
   let totalPaginas = 1;
   let totalNFs = 0;
@@ -762,9 +763,19 @@ export async function listarNotasFiscais(
   let fonteConfirmada = false;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
-    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 50 };
-    if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
-    if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
+    const pm: Record<string, unknown> = {
+      pagina: p,
+      registros_por_pagina: 50,
+      cOrdemDecrescente: "S", // mais recentes primeiro → Janeiro/2026 na pág. 1
+    };
+    if (opcoes.dataDe) {
+      pm.filtrar_por_data_de = opcoes.dataDe;
+      pm.filtrar_por_data_emissao_de = opcoes.dataDe; // nome alternativo
+    }
+    if (opcoes.dataAte) {
+      pm.filtrar_por_data_ate = opcoes.dataAte;
+      pm.filtrar_por_data_emissao_ate = opcoes.dataAte;
+    }
     return pm;
   };
 
@@ -867,49 +878,75 @@ export async function listarNotasFiscais(
       lista = r3.conta_receber_cadastro ?? [];
     }
 
+    // Salva primeiro registro bruto para diagnóstico (quando itens = 0)
+    if (!primeiroRegistroBruto && lista.length > 0) {
+      primeiroRegistroBruto = lista[0];
+    }
+
     for (const registro of lista) {
       if (fonte === "nfconsultar") {
-        // ---- Parsing de produtos/nfconsultar (estrutura real confirmada pelo debug) ----
-        // info: nNF, serie, dEmi, dCan, tpNF
-        // det[].prod: xProd, qCom, vUnCom, nCMCTotal, uCom, CFOP (maiúsculo)
-        // cRazao / cnpj_cpf / nCodCli: top-level ou em sub-objeto dest
+        // ---- Parsing de produtos/nfconsultar ----
+        // info (ou ide): nNF, serie, dEmi, dCan | det[].prod | dest: xNome/CNPJ
         const info = (registro.info as Record<string, unknown>) ?? {};
+        const ide = (registro.ide as Record<string, unknown>) ?? {};
         const compl = (registro.compl as Record<string, unknown>) ?? {};
         const det = (registro.det as Record<string, unknown>[]) ?? [];
         const dest = (registro.dest as Record<string, unknown>) ?? {};
+        const totalObj = ((registro.total ?? registro.totais) as Record<string, unknown>) ?? {};
+        const totICMS = ((totalObj.ICMSTot ?? totalObj.icmsTot) as Record<string, unknown>) ?? {};
 
-        const nfNum = (info.nNF ?? "").toString().padStart(8, "0");
-        if (!nfNum || nfNum === "00000000") continue;
-        const serie = (info.serie ?? "").toString();
-        const dataEmissao = dataIso(info.dEmi) ?? "";
-        const dCan = (info.dCan ?? "").toString().trim();
+        // nNF pode estar em info, ide ou nível raiz
+        const nfNumRaw = (pega(info, "nNF") ?? pega(ide, "nNF") ?? pega(registro, "nNF") ?? "").toString();
+        if (!nfNumRaw || nfNumRaw === "0") continue;
+        const nfNum = nfNumRaw.padStart(8, "0");
+
+        const serie = (pega(info, "serie") ?? pega(ide, "serie") ?? pega(registro, "serie") ?? "").toString();
+        const dataEmissao = dataIso(pega(info, "dEmi") ?? pega(ide, "dEmi") ?? pega(registro, "dEmi", "dEmissao")) ?? "";
+        const dCan = (pega(info, "dCan") ?? pega(ide, "dCan") ?? "").toString().trim();
         const situacao = dCan ? "Cancelado" : "Autorizado";
-        const operacao = (compl.cCodCateg ?? "").toString();
+        const operacao = (pega(compl, "cCodCateg") ?? "").toString();
 
-        // Cliente: tenta dest.xNome, dest.cRazao, top-level cRazao
         const clienteNome = (
           pega(dest, "xNome", "cRazao") ??
-          pega(registro, "cRazao") ?? ""
+          pega(registro, "cRazao", "xNome") ?? ""
         ).toString();
         const clienteDoc = (
           pega(dest, "CNPJ", "CPF", "cnpj_cpf") ??
-          pega(registro, "cnpj_cpf") ?? ""
+          pega(registro, "cnpj_cpf", "CNPJ", "CPF") ?? ""
         ).toString();
 
-        for (const item of det) {
-          const prod = (item.prod as Record<string, unknown>) ?? {};
-          // CFOP vem como "1.403" — normaliza removendo o ponto
-          const cfopRaw = (pega(prod, "CFOP", "cfop", "cCFOP") ?? "").toString();
-          const cfop = cfopRaw.replace(".", "");
+        if (det.length > 0) {
+          for (const item of det) {
+            const prod = (item.prod as Record<string, unknown>) ?? {};
+            // CFOP vem como "1.403" — normaliza removendo o ponto
+            const cfopRaw = (pega(prod, "CFOP", "cfop", "cCFOP") ?? "").toString();
+            const cfop = cfopRaw.replace(".", "");
+            itens.push({
+              dataEmissao, nf: nfNum, serie,
+              clienteNome: clienteNome || clienteDoc, clienteDoc,
+              produto: (pega(prod, "xProd", "cDescricao", "descricao") ?? "").toString(),
+              quantidade: num(pega(prod, "qCom", "nQtde", "quantidade") ?? 0),
+              unidade: (pega(prod, "uCom", "cUnidade", "unidade") ?? "").toString(),
+              valorUnitario: num(pega(prod, "vUnCom", "nValUnit", "valor_unitario") ?? 0),
+              totalMercadoria: num(pega(prod, "nCMCTotal", "vProd", "nValorTotal", "valor_total") ?? 0),
+              operacao, situacao, tags: "", cfop,
+            });
+          }
+        } else {
+          // det vazio em modo listagem — cria uma linha resumo por NF
+          const valorNF = num(
+            pega(totICMS, "vNF", "vProd") ??
+            pega(totalObj, "vNF", "vProd") ??
+            pega(compl, "nValorNF", "vNF") ??
+            pega(registro, "nValorNF", "vNF", "valor_nf") ??
+            0
+          );
           itens.push({
             dataEmissao, nf: nfNum, serie,
             clienteNome: clienteNome || clienteDoc, clienteDoc,
-            produto: (pega(prod, "xProd", "cDescricao", "descricao") ?? "").toString(),
-            quantidade: num(pega(prod, "qCom", "nQtde", "quantidade") ?? 0),
-            unidade: (pega(prod, "uCom", "cUnidade", "unidade") ?? "").toString(),
-            valorUnitario: num(pega(prod, "vUnCom", "nValUnit", "valor_unitario") ?? 0),
-            totalMercadoria: num(pega(prod, "nCMCTotal", "nValorTotal", "valor_total") ?? 0),
-            operacao, situacao, tags: "", cfop,
+            produto: "", quantidade: 1, unidade: "", valorUnitario: valorNF,
+            totalMercadoria: valorNF,
+            operacao, situacao, tags: "", cfop: "",
           });
         }
       } else if (fonte === "nf") {
@@ -1002,7 +1039,22 @@ export async function listarNotasFiscais(
     if (pagina <= totalPaginas) await sleep(200);
   } while (pagina <= totalPaginas);
 
-  return { itens, totalNFs, truncado, fonte };
+  // Pós-filtro por data de emissão — garante que, mesmo quando o filtro da API
+  // é ignorado, só chegam ao cliente os itens do período solicitado.
+  if (fonte === "nfconsultar" && (opcoes.dataDe || opcoes.dataAte)) {
+    const deIso = brParaIso(opcoes.dataDe);
+    const ateIso = brParaIso(opcoes.dataAte);
+    const filtrados = itens.filter((item) => {
+      if (!item.dataEmissao) return true;
+      if (deIso && item.dataEmissao < deIso) return false;
+      if (ateIso && item.dataEmissao > ateIso) return false;
+      return true;
+    });
+    itens.length = 0;
+    itens.push(...filtrados);
+  }
+
+  return { itens, totalNFs, truncado, fonte, primeiroRegistroBruto: itens.length === 0 ? primeiroRegistroBruto : undefined };
 }
 
 // ===================== Contas a Receber (financas/contareceber) =====================
