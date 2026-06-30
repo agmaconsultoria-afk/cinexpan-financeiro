@@ -335,7 +335,7 @@ export default function RastreioFaturamentoPage() {
           {/* Cards de totais (cabeçalho do demonstrativo) */}
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {([
-              { col: "falta" as Coluna, v: dem.totais.aindaFaltaReceber, c: "text-slate-900" },
+              { col: "falta" as Coluna, v: dem.linhas.filter((l) => l.mes >= mesAtual).reduce((s, l) => s + l.aindaFaltaReceber, 0), c: "text-slate-900" },
               { col: "recebido" as Coluna, v: dem.totais.jaRecebido, c: "text-emerald-600" },
               { col: "descontos" as Coluna, v: dem.totais.descontos, c: "text-rose-600" },
               { col: "juros" as Coluna, v: dem.totais.multaJuros, c: "text-slate-900" },
