@@ -333,7 +333,7 @@ export default function RastreioFaturamentoPage() {
           </div>
 
           {/* Cards de totais (cabeçalho do demonstrativo) */}
-          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
             {([
               { col: "falta" as Coluna, v: dem.linhas.filter((l) => l.mes >= mesAtual).reduce((s, l) => s + l.aindaFaltaReceber, 0), c: "text-slate-900" },
               { col: "recebido" as Coluna, v: dem.totais.jaRecebido, c: "text-emerald-600" },
@@ -358,7 +358,7 @@ export default function RastreioFaturamentoPage() {
           {/* Tabela do demonstrativo */}
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
                     <th className="px-4 py-3 text-left font-medium">{colLabel}</th>
@@ -498,22 +498,25 @@ export default function RastreioFaturamentoPage() {
         </>
       )}
 
-      {/* Modal de detalhe (drill-down dos lançamentos) */}
+      {/* Modal de detalhe — bottom sheet em mobile, centralizado em desktop */}
       {detalhe && (
         <div
-          className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="no-print fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
           onClick={() => setDetalhe(null)}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
+            className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:max-h-[85vh] sm:max-w-4xl sm:rounded-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900">
+            {/* Alça visual mobile */}
+            <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-slate-300 sm:hidden" />
+
+            <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
+              <div className="min-w-0 pr-2">
+                <h3 className="text-sm font-semibold text-slate-900 sm:text-base">
                   {TITULO_COLUNA[detalhe.col]} — {rotuloMesAno(competencia)}
                 </h3>
-                <p className="text-sm text-slate-500">
+                <p className="mt-0.5 truncate text-xs text-slate-500 sm:text-sm">
                   {detalhe.mes
                     ? `${colLabel}: ${rotuloMesExtenso(detalhe.mes)} · `
                     : "Todos os meses · "}
@@ -522,14 +525,14 @@ export default function RastreioFaturamentoPage() {
               </div>
               <button
                 onClick={() => setDetalhe(null)}
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div className="overflow-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[600px] text-sm">
                 <thead className="sticky top-0 bg-slate-50">
                   <tr className="text-left text-slate-500">
                     <th className="px-4 py-2.5 font-medium">Cliente</th>
@@ -537,14 +540,16 @@ export default function RastreioFaturamentoPage() {
                     <th className="px-4 py-2.5 font-medium">Parcela</th>
                     <th className="px-4 py-2.5 font-medium">Situação</th>
                     <th className="px-4 py-2.5 font-medium">Vencimento</th>
-                    <th className="px-4 py-2.5 font-medium">Últ. Recebimento</th>
+                    <th className="px-4 py-2.5 font-medium">Últ. Receb.</th>
                     <th className="px-4 py-2.5 text-right font-medium">Valor</th>
                   </tr>
                 </thead>
                 <tbody>
                   {detContas.map((c, i) => (
                     <tr key={`${c.codigoOmie ?? i}`} className="border-t border-slate-100">
-                      <td className="px-4 py-2 text-slate-700">{c.cliente || "—"}</td>
+                      <td className="max-w-[160px] truncate px-4 py-2 text-slate-700" title={c.cliente || ""}>
+                        {c.cliente || "—"}
+                      </td>
                       <td className="px-4 py-2 text-slate-600">{c.notaFiscal || "—"}</td>
                       <td className="px-4 py-2 text-slate-600">{c.parcela || "—"}</td>
                       <td className="px-4 py-2 text-slate-600">{c.situacao || "—"}</td>
