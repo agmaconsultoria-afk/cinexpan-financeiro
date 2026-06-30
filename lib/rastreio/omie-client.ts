@@ -763,19 +763,9 @@ export async function listarNotasFiscais(
   let fonteConfirmada = false;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
-    const pm: Record<string, unknown> = {
-      pagina: p,
-      registros_por_pagina: 50,
-      cOrdemDecrescente: "S", // mais recentes primeiro → Janeiro/2026 na pág. 1
-    };
-    if (opcoes.dataDe) {
-      pm.filtrar_por_data_de = opcoes.dataDe;
-      pm.filtrar_por_data_emissao_de = opcoes.dataDe; // nome alternativo
-    }
-    if (opcoes.dataAte) {
-      pm.filtrar_por_data_ate = opcoes.dataAte;
-      pm.filtrar_por_data_emissao_ate = opcoes.dataAte;
-    }
+    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 50 };
+    if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
+    if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
     return pm;
   };
 
