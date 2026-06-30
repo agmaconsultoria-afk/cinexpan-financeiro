@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Plus, Save } from "lucide-react";
+import { useRef, useMemo, useState } from "react";
+import { Plus, Save, Upload } from "lucide-react";
 import { useRastreio } from "@/lib/rastreio/context";
 import { rotuloMesAno } from "@/lib/rastreio/logic";
 import { formatarMoeda } from "@/lib/format";
@@ -51,8 +51,35 @@ function CampoMoeda({
 }
 
 export default function LancarFaturamentoPage() {
-  const { faturamento, setFaturamentoMes, vendasPF, setVendasPFMes } = useRastreio();
+  const { faturamento, setFaturamentoMes, vendasPF, setVendasPFMes, carregarDoBanco } = useRastreio();
   const [novoMes, setNovoMes] = useState(() => new Date().toISOString().slice(0, 7));
+  const inputArquivo = useRef<HTMLInputElement>(null);
+  const [importando, setImportando] = useState(false);
+  const [msgImport, setMsgImport] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+
+  async function importarXlsx(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportando(true);
+    setMsgImport(null);
+    try {
+      const fd = new FormData();
+      fd.append("arquivo", file);
+      const res = await fetch("/api/rastreio/importar-faturamento", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.ok) {
+        setMsgImport({ tipo: "ok", texto: `${data.importados} ${data.importados === 1 ? "mês importado" : "meses importados"} com sucesso.` });
+        await carregarDoBanco();
+      } else {
+        setMsgImport({ tipo: "erro", texto: data.erro ?? "Erro ao importar." });
+      }
+    } catch {
+      setMsgImport({ tipo: "erro", texto: "Erro de conexão. Tente novamente." });
+    } finally {
+      setImportando(false);
+      if (inputArquivo.current) inputArquivo.current.value = "";
+    }
+  }
 
   // Lista de competências: anos de 2025/2026 pré-carregados + o que já existe.
   const meses = useMemo(() => {
@@ -83,6 +110,21 @@ export default function LancarFaturamentoPage() {
         subtitulo="Faturamento do mês e Vendas PF por competência (base do % rastreado)"
         acoes={
           <div className="flex items-center gap-2">
+            <input
+              ref={inputArquivo}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={importarXlsx}
+            />
+            <button
+              onClick={() => inputArquivo.current?.click()}
+              disabled={importando}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <Upload className="h-4 w-4" />
+              {importando ? "Importando..." : "Importar XLSX"}
+            </button>
             <SeletorMes value={novoMes} onChange={setNovoMes} />
             <button
               onClick={adicionarMes}
@@ -93,6 +135,18 @@ export default function LancarFaturamentoPage() {
           </div>
         }
       />
+
+      {msgImport && (
+        <div
+          className={`mb-4 rounded-lg px-4 py-3 text-sm ${
+            msgImport.tipo === "ok"
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-rose-50 text-rose-700"
+          }`}
+        >
+          {msgImport.texto}
+        </div>
+      )}
 
       <div className="card overflow-hidden">
         <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-4">
