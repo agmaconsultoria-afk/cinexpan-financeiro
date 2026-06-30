@@ -436,6 +436,11 @@ export async function gravarHistoricoOmie(
   );
 }
 
+export async function limparHistoricoOmie(): Promise<void> {
+  await ensureSchema();
+  await getPool().query("DELETE FROM omie_historico_processamento");
+}
+
 export async function lerHistoricoOmie(limite = 50): Promise<HistoricoProcessamento[]> {
   await ensureSchema();
   const { rows } = await getPool().query<{

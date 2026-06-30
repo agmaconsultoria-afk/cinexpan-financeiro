@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, Receipt, FileX, CheckCircle2, History, Clock } from "lucide-react";
+import { Search, Receipt, FileX, CheckCircle2, History, Clock, Trash2 } from "lucide-react";
 import { KpiCard } from "@/components/KpiCard";
 import { PageHeader } from "@/components/ui";
 import { SeletorMes } from "@/components/SeletorMes";
@@ -46,6 +46,7 @@ export default function FaturamentoNFPage() {
 
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [limpando, setLimpando] = useState(false);
 
   const carregarHistorico = useCallback(async () => {
     setCarregandoHistorico(true);
@@ -63,6 +64,19 @@ export default function FaturamentoNFPage() {
   useEffect(() => {
     carregarHistorico();
   }, [carregarHistorico]);
+
+  async function limparHistorico() {
+    if (!confirm("Limpar todo o histórico de processamentos?")) return;
+    setLimpando(true);
+    try {
+      await fetch("/api/omie/historico", { method: "DELETE" });
+      setHistorico([]);
+    } catch {
+      /* silencioso */
+    } finally {
+      setLimpando(false);
+    }
+  }
 
   async function buscar() {
     setCarregando(true);
@@ -223,9 +237,21 @@ export default function FaturamentoNFPage() {
 
       {/* Histórico de processamentos */}
       <div className="card overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-4">
-          <History className="h-4 w-4 text-brand-600" />
-          <span className="text-sm font-medium text-slate-700">Histórico de processamentos</span>
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-brand-600" />
+            <span className="text-sm font-medium text-slate-700">Histórico de processamentos</span>
+          </div>
+          {historico.length > 0 && (
+            <button
+              onClick={limparHistorico}
+              disabled={limpando}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {limpando ? "Limpando..." : "Limpar histórico"}
+            </button>
+          )}
         </div>
         {carregandoHistorico ? (
           <div className="flex items-center justify-center py-10">
