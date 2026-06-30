@@ -166,7 +166,12 @@ function ModalTrocarSenha({ onFechar }: { onFechar: () => void }) {
   );
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  mobileAberto?: boolean;
+  onFecharMobile?: () => void;
+}
+
+export function Sidebar({ mobileAberto = false, onFecharMobile }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { usuario } = useSessao();
@@ -183,61 +188,86 @@ export function Sidebar() {
     window.location.href = "/login";
   }
 
+  const conteudoNav = (
+    <>
+      <nav className="flex-1 space-y-1 px-3 py-4">
+        {itens.map(({ href, label, icon: Icon }) => {
+          const ativo = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              onClick={onFecharMobile}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                ativo
+                  ? "bg-brand-600 text-white"
+                  : "text-brand-100 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Icon className="h-5 w-5" />
+              {label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="border-t border-white/10 px-4 py-4">
+        {usuario && (
+          <div className="mb-3 px-2">
+            <p className="truncate text-sm font-medium text-white" title={usuario.nome}>
+              {usuario.nome}
+            </p>
+            <p className="truncate text-xs text-brand-200">{usuario.perfil}</p>
+          </div>
+        )}
+        <button
+          onClick={() => { setModalSenha(true); onFecharMobile?.(); }}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-brand-100 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <KeyRound className="h-4 w-4" />
+          Alterar senha
+        </button>
+        <button
+          onClick={sair}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-brand-100 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <LogOut className="h-4 w-4" />
+          Sair
+        </button>
+      </div>
+    </>
+  );
+
   return (
     <>
       {modalSenha && <ModalTrocarSenha onFechar={() => setModalSenha(false)} />}
 
+      {/* Overlay mobile */}
+      {mobileAberto && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={onFecharMobile}
+        />
+      )}
+
+      {/* Drawer mobile */}
+      <aside
+        className={`no-print fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-brand-950 text-white transition-transform duration-300 lg:hidden ${
+          mobileAberto ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="clay-band flex h-20 items-center border-b border-white/10 px-6">
+          <CinexpanLogo tamanho="md" />
+        </div>
+        {conteudoNav}
+      </aside>
+
+      {/* Sidebar desktop */}
       <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-brand-950 text-white lg:flex">
         <div className="clay-band flex h-20 items-center border-b border-white/10 px-6">
           <CinexpanLogo tamanho="md" />
         </div>
-
-        <nav className="flex-1 space-y-1 px-3 py-4">
-          {itens.map(({ href, label, icon: Icon }) => {
-            const ativo = href === "/" ? pathname === "/" : pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  ativo
-                    ? "bg-brand-600 text-white"
-                    : "text-brand-100 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="border-t border-white/10 px-4 py-4">
-          {usuario && (
-            <div className="mb-3 px-2">
-              <p className="truncate text-sm font-medium text-white" title={usuario.nome}>
-                {usuario.nome}
-              </p>
-              <p className="truncate text-xs text-brand-200" title={usuario.email}>
-                {usuario.perfil}
-              </p>
-            </div>
-          )}
-          <button
-            onClick={() => setModalSenha(true)}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-brand-100 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <KeyRound className="h-4 w-4" />
-            Alterar senha
-          </button>
-          <button
-            onClick={sair}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-brand-100 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <LogOut className="h-4 w-4" />
-            Sair
-          </button>
-        </div>
+        {conteudoNav}
       </aside>
     </>
   );
