@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { lerCredenciais, listarNotasFiscais } from "@/lib/rastreio/omie-client";
+import { lerCredenciais, listarNotasFiscais, callOmie } from "@/lib/rastreio/omie-client";
 import { exigirEdicao } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +41,20 @@ export async function GET(req: NextRequest) {
   } else {
     dataDe = searchParams.get("de") ?? undefined;
     dataAte = searchParams.get("ate") ?? undefined;
+  }
+
+  // Modo debug: devolve amostra bruta do Omie para diagnóstico.
+  if (searchParams.get("debug") === "1") {
+    try {
+      const amostra = await callOmie(cred, "produtos/nf/", "ListarNFe", {
+        pagina: 1,
+        registros_por_pagina: 1,
+      });
+      return NextResponse.json({ ok: true, debug: true, amostra });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Erro ao amostrar NFs.";
+      return NextResponse.json({ ok: false, erro: msg }, { status: 502 });
+    }
   }
 
   try {

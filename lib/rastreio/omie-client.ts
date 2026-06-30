@@ -754,16 +754,21 @@ export async function listarNotasFiscais(
     const param: Record<string, unknown> = {
       pagina,
       registros_por_pagina: 50,
-      apenas_importado_api: "N",
     };
-    if (opcoes.dataDe) param.filtrar_por_data_de = opcoes.dataDe;
-    if (opcoes.dataAte) param.filtrar_por_data_ate = opcoes.dataAte;
+    if (opcoes.dataDe) {
+      param.filtrar_por_data_de = opcoes.dataDe;
+      param.dEmissaoDe = opcoes.dataDe;
+    }
+    if (opcoes.dataAte) {
+      param.filtrar_por_data_ate = opcoes.dataAte;
+      param.dEmissaoAte = opcoes.dataAte;
+    }
 
     const resp = await callOmie<{
       nfCadastro?: Record<string, unknown>[];
       total_de_paginas?: number;
       total_de_registros?: number;
-    }>(cred, "produtos/nf/", "ListarNF", param);
+    }>(cred, "produtos/nf/", "ListarNFe", param);
 
     totalPaginas = resp.total_de_paginas ?? 1;
     totalNFs = resp.total_de_registros ?? 0;
