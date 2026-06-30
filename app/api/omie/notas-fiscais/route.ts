@@ -64,12 +64,23 @@ export async function GET(req: NextRequest) {
 
   try {
     const resultado = await listarNotasFiscais(cred, { dataDe, dataAte });
+
+    // Resumo por natureza da operação — ajuda a identificar NFs não-venda incluídas
+    const resumoPorNatOp: Record<string, { nfs: number; total: number }> = {};
+    for (const item of resultado.itens) {
+      const chave = item.natOp || "(sem natureza)";
+      if (!resumoPorNatOp[chave]) resumoPorNatOp[chave] = { nfs: 0, total: 0 };
+      resumoPorNatOp[chave].nfs++;
+      resumoPorNatOp[chave].total += item.totalMercadoria;
+    }
+
     return NextResponse.json({
       ok: true,
       fonte: resultado.fonte,
       totalNFs: resultado.totalNFs,
       truncado: resultado.truncado,
       itens: resultado.itens,
+      resumoPorNatOp,
       // Incluído apenas quando itens = 0 — ajuda a diagnosticar estrutura real da API
       ...(resultado.primeiroRegistroBruto !== undefined ? { primeiroRegistroBruto: resultado.primeiroRegistroBruto } : {}),
     });

@@ -727,6 +727,8 @@ export interface NotaFiscalItem {
   valorUnitario: number;
   totalMercadoria: number;
   operacao: string;
+  natOp: string;
+  finNFe: string;
   situacao: string;
   tags: string;
   cfop: string;
@@ -764,7 +766,10 @@ export async function listarNotasFiscais(
   let paginasProcessadas = 0;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
-    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 100 };
+    const pm: Record<string, unknown> = {
+      pagina: p, registros_por_pagina: 100,
+      apenas_nfe_autorizadas: "S",  // só NF-e com status Autorizado
+    };
     if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
     if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
     return pm;
@@ -957,6 +962,7 @@ export async function listarNotasFiscais(
         const situacao = dCan ? "Cancelado" : cDeneg === "S" ? "Denegado" : "Autorizado";
 
         const operacao = (compl.cCodCateg ?? "").toString();
+        const natOp = (ide.natOp ?? "").toString();
         const clienteNome = (pega(destInt, "cRazao", "xNome") ?? "").toString();
         const clienteDoc = (pega(destInt, "cnpj_cpf", "CNPJ", "CPF") ?? "").toString();
 
@@ -977,7 +983,7 @@ export async function listarNotasFiscais(
               valorUnitario: num(pega(prod, "vUnCom") ?? 0),
               // nCMCTotal é CMC (custo), vProd é o valor real do produto
               totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
-              operacao, situacao, tags: "", cfop,
+              operacao, natOp, finNFe, situacao, tags: "", cfop,
             });
           }
         } else {
@@ -988,7 +994,7 @@ export async function listarNotasFiscais(
             clienteNome: clienteNome || clienteDoc, clienteDoc,
             produto: "", quantidade: 1, unidade: "", valorUnitario: valorNF,
             totalMercadoria: valorNF,
-            operacao, situacao, tags: "", cfop: "",
+            operacao, natOp, finNFe, situacao, tags: "", cfop: "",
           });
         }
       } else if (fonte === "nf") {
@@ -1019,7 +1025,7 @@ export async function listarNotasFiscais(
             unidade: (pega(prod, "cUnidade", "unidade") ?? "").toString(),
             valorUnitario: num(pega(prod, "nValUnit", "valor_unitario") ?? 0),
             totalMercadoria: num(pega(prod, "nValorTotal", "valor_total", "nTotProd") ?? 0),
-            operacao, situacao, tags, cfop,
+            operacao, natOp: "", finNFe: "", situacao, tags, cfop,
           });
         }
       } else if (fonte === "pedido") {
@@ -1047,7 +1053,7 @@ export async function listarNotasFiscais(
             unidade: (pega(prod, "unidade", "cUnidade") ?? "").toString(),
             valorUnitario: num(pega(prod, "valor_unitario", "nValUnit") ?? 0),
             totalMercadoria: num(pega(prod, "valor_total", "nValorTotal") ?? 0),
-            operacao: "Pedido de Venda", situacao, tags: "", cfop,
+            operacao: "Pedido de Venda", natOp: "", finNFe: "", situacao, tags: "", cfop,
           });
         }
       } else {
@@ -1068,6 +1074,8 @@ export async function listarNotasFiscais(
           valorUnitario: 0,
           totalMercadoria: conta.valorConta,
           operacao: conta.operacao || "",
+          natOp: "",
+          finNFe: "",
           situacao: eCancelado ? "Cancelado" : "Autorizado",
           tags: conta.situacao, // status de pagamento no campo tags
           cfop: "",
