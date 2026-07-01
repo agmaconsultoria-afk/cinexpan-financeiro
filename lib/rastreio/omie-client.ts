@@ -771,7 +771,9 @@ export async function listarNotasFiscais(
   let paginasProcessadas = 0;
 
   const buildParamNF = (p: number): Record<string, unknown> => {
-    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 100 };
+    // cDetalhesPedido: "S" faz o Omie devolver o objeto `pedido` (com opPedido =
+    // a "Operação" que o relatório usa: Pedido de Venda / Remessa / Devolução).
+    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 100, cDetalhesPedido: "S" };
     if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
     if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
     return pm;
@@ -970,12 +972,15 @@ export async function listarNotasFiscais(
         const clienteNome = (pega(destInt, "cRazao", "xNome") ?? "").toString();
         const clienteDoc = (pega(destInt, "cnpj_cpf", "CNPJ", "CPF") ?? "").toString();
 
-        // DIAGNÓSTICO: inclui todas as NFs de saída autorizadas e expõe categoria
-        // (compl.cCodCateg) + finNFe para descobrir qual campo separa o "Pedido de
-        // Venda" do relatório do Omie das remessas/complementares que não entram.
+        // A "Operação" do relatório do Omie vem do objeto `pedido` (retornado por
+        // cDetalhesPedido="S"): pedido.opPedido = "Pedido de Venda" / "Remessa de
+        // Produto" / "Devolução de Venda" etc.
         const categoria = (compl.cCodCateg ?? "").toString();
         const nIdPedido = num(compl.nIdPedido);
         const nIdReceb = num(compl.nIdReceb);
+        const pedidoObj = (registro.pedido as Record<string, unknown>) ?? {};
+        const opPedido = (pedidoObj.opPedido ?? "").toString().trim();
+        const operacaoNF = opPedido || "(sem pedido)";
 
         if (det.length > 0) {
           for (const item of det) {
@@ -992,7 +997,7 @@ export async function listarNotasFiscais(
               valorUnitario: num(pega(prod, "vUnCom") ?? 0),
               // nCMCTotal é CMC (custo), vProd é o valor real do produto
               totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
-              operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop, categoria, nIdPedido, nIdReceb,
+              operacao: operacaoNF, natOp, finNFe, situacao, tags: "", cfop, categoria, nIdPedido, nIdReceb,
             });
           }
         } else {
@@ -1003,7 +1008,7 @@ export async function listarNotasFiscais(
             clienteNome: clienteNome || clienteDoc, clienteDoc,
             produto: "", quantidade: 1, unidade: "", valorUnitario: valorNF,
             totalMercadoria: valorNF,
-            operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop: "", categoria, nIdPedido, nIdReceb,
+            operacao: operacaoNF, natOp, finNFe, situacao, tags: "", cfop: "", categoria, nIdPedido, nIdReceb,
           });
         }
       } else if (fonte === "nf") {
