@@ -50,6 +50,8 @@ export default function FaturamentoNFPage() {
   const [resumoPorCategoria, setResumoPorCategoria] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorFinNFe, setResumoPorFinNFe] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [excluidas, setExcluidas] = useState<{ nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] | null>(null);
+  const [detalhe196, setDetalhe196] = useState<{ nf: string; cfops: string; cliente: string; produto: string; total: number }[] | null>(null);
+  const [mostrarDetalhe196, setMostrarDetalhe196] = useState(false);
   const [mostrarResumo, setMostrarResumo] = useState(false);
   const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
   const [mostrarCFOP, setMostrarCFOP] = useState(false);
@@ -102,12 +104,14 @@ export default function FaturamentoNFPage() {
     setResumoPorCategoria(null);
     setResumoPorFinNFe(null);
     setExcluidas(null);
+    setDetalhe196(null);
     setMostrarResumo(false);
     setMostrarResumoOp(false);
     setMostrarCFOP(false);
     setMostrarCategoria(false);
     setMostrarFinNFe(false);
     setMostrarExcluidas(false);
+    setMostrarDetalhe196(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
       const data = await res.json();
@@ -115,7 +119,8 @@ export default function FaturamentoNFPage() {
         setErro(data.erro ?? "Erro ao buscar notas fiscais.");
         return;
       }
-      const itens: { totalMercadoria: number; nf: string }[] = data.itens ?? [];
+      type ItemNF = { totalMercadoria: number; nf: string; cfop?: string; categoria?: string; clienteNome?: string; produto?: string };
+      const itens: ItemNF[] = data.itens ?? [];
       setTotalNFs(new Set(itens.map((i) => i.nf)).size);
       setTotalMerc(itens.reduce((s, i) => s + i.totalMercadoria, 0));
       setResumoPorNatOp(data.resumoPorNatOp ?? null);
@@ -124,6 +129,19 @@ export default function FaturamentoNFPage() {
       setResumoPorCategoria(data.resumoPorCategoria ?? null);
       setResumoPorFinNFe(data.resumoPorFinNFe ?? null);
       setExcluidas(data.excluidas ?? null);
+
+      // Detalhe da categoria 1.01.96 (misturada) — agrupa por NF p/ achar o padrão
+      const grupos196: Record<string, { nf: string; cfops: Set<string>; cliente: string; produto: string; total: number }> = {};
+      for (const it of itens) {
+        if ((it.categoria ?? "") !== "1.01.96") continue;
+        if (!grupos196[it.nf]) grupos196[it.nf] = { nf: it.nf, cfops: new Set(), cliente: it.clienteNome ?? "", produto: it.produto ?? "", total: 0 };
+        if (it.cfop) grupos196[it.nf].cfops.add(it.cfop);
+        grupos196[it.nf].total += it.totalMercadoria;
+      }
+      const lista196 = Object.values(grupos196).map((g) => ({
+        nf: g.nf, cfops: Array.from(g.cfops).join(", "), cliente: g.cliente, produto: g.produto, total: g.total,
+      }));
+      setDetalhe196(lista196.length ? lista196 : null);
       setBuscou(true);
     } catch {
       setErro("Erro de conexão. Tente novamente.");
@@ -373,6 +391,51 @@ export default function FaturamentoNFPage() {
                           <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
                           <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
                             {formatarMoeda(v.total)}
+                          </td>
+                          <td className="w-full" />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {detalhe196 && detalhe196.length > 0 && (
+            <div className="card mb-4 overflow-hidden border-amber-200">
+              <button
+                onClick={() => setMostrarDetalhe196((v) => !v)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
+              >
+                <span className="font-medium text-amber-700">
+                  Detalhe da categoria 1.01.96 ({detalhe196.length} NFs) — categoria misturada
+                </span>
+                <span className="text-xs">{mostrarDetalhe196 ? "▲ ocultar" : "▼ ver"}</span>
+              </button>
+              {mostrarDetalhe196 && (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-y border-slate-200 text-left text-slate-500">
+                      <th className="px-5 py-2 font-medium">NF</th>
+                      <th className="px-3 py-2 font-medium">CFOPs</th>
+                      <th className="px-3 py-2 font-medium">Cliente</th>
+                      <th className="px-3 py-2 font-medium">Produto</th>
+                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
+                      <th className="w-full" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detalhe196
+                      .slice()
+                      .sort((a, b) => b.total - a.total)
+                      .map((d) => (
+                        <tr key={d.nf} className="border-b border-slate-100 last:border-0">
+                          <td className="px-5 py-2 text-slate-700">{d.nf.replace(/^0+/, "")}</td>
+                          <td className="px-3 py-2 text-slate-500">{d.cfops}</td>
+                          <td className="px-3 py-2 text-slate-500">{d.cliente}</td>
+                          <td className="px-3 py-2 text-slate-500">{d.produto}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
+                            {formatarMoeda(d.total)}
                           </td>
                           <td className="w-full" />
                         </tr>
