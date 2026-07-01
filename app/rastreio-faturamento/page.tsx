@@ -263,35 +263,45 @@ export default function RastreioFaturamentoPage() {
     }
   }
 
-  // Diagnóstico: cruza as NFs de venda (faturamento Omie) com as contas a receber
-  // da mesma competência, apontando divergências (venda sem financeiro no mês,
-  // financeiro sem venda no mês, e NFs fora do faturamento — remessa/devolução).
+  // Diagnóstico ONLINE: busca do Omie, em tempo real, as NFs de venda E as contas
+  // a receber da competência — sem usar o cache local. Isso é essencial porque uma
+  // NF vendida num mês pode ter sido cancelada/devolvida depois (em outro mês); só
+  // consultando o Omio ao vivo essas mudanças aparecem. Cruza os dois lados e aponta
+  // as divergências. A sincronização também atualiza a base local.
   async function executarDiagnostico() {
     setDiagCarregando(true);
     setDiag(null);
     setDiagErro(null);
     try {
-      const res = await fetch(
-        `/api/omie/notas-fiscais?competencia=${encodeURIComponent(competencia)}`
-      );
-      const data = await res.json();
-      if (!data.ok) {
-        setDiagErro(data.erro ?? "Não foi possível carregar o faturamento do mês.");
+      const [resNf, resCr] = await Promise.all([
+        fetch(`/api/omie/notas-fiscais?competencia=${encodeURIComponent(competencia)}`),
+        fetch(`/api/omie/contas-receber?competencia=${encodeURIComponent(competencia)}`),
+      ]);
+      const dataNf = await resNf.json();
+      const dataCr = await resCr.json();
+      if (!dataNf.ok) {
+        setDiagErro(dataNf.erro ?? "Não foi possível carregar o faturamento do mês.");
+        return;
+      }
+      if (!dataCr.ok) {
+        setDiagErro(dataCr.erro ?? "Não foi possível carregar as contas a receber do mês.");
         return;
       }
       const norm = (v: unknown) => String(v ?? "").replace(/\D/g, "").replace(/^0+/, "");
-      // NFs de venda (faturamento) agregadas por número
+      // NFs de venda (faturamento) agregadas por número — já vêm frescas do Omie.
       const nfsFaturadas = new Map<string, DiagNF>();
-      for (const it of (data.itens ?? []) as { nf: string; clienteNome?: string; totalMercadoria?: number }[]) {
+      for (const it of (dataNf.itens ?? []) as { nf: string; clienteNome?: string; totalMercadoria?: number }[]) {
         const nf = norm(it.nf);
         if (!nf) continue;
         const g = nfsFaturadas.get(nf) ?? { nf, cliente: it.clienteNome ?? "", total: 0 };
         g.total += it.totalMercadoria ?? 0;
         nfsFaturadas.set(nf, g);
       }
-      // Contas a receber da competência agregadas por NF
+      // Contas a receber ONLINE da competência (emissão no mês) agregadas por NF.
       const nfsContas = new Map<string, DiagNF>();
-      for (const c of contas.filter((x) => x.competencia === competencia)) {
+      for (const c of (dataCr.contas ?? []) as { notaFiscal?: string; cliente?: string; valorConta?: number; situacao?: string; dataEmissao?: string }[]) {
+        const comp = (c.dataEmissao ?? "").slice(0, 7);
+        if (comp && comp !== competencia) continue; // trava na competência (emissão)
         const nf = norm(c.notaFiscal);
         if (!nf) continue;
         const g = nfsContas.get(nf) ?? { nf, cliente: c.cliente ?? "", total: 0, situacao: c.situacao };
@@ -311,8 +321,11 @@ export default function RastreioFaturamentoPage() {
         qtdContas: nfsContas.size,
         faturadaSemConta,
         contaSemFaturada,
-        excluidas: data.excluidas ?? [],
+        excluidas: dataNf.excluidas ?? [],
       });
+      // O sync de contas a receber gravou a competência atualizada na base —
+      // recarrega para a tela refletir cancelamentos/devoluções recentes.
+      await carregarDoBanco();
     } catch {
       setDiagErro("Falha de conexão ao executar o diagnóstico.");
     } finally {
@@ -594,8 +607,9 @@ export default function RastreioFaturamentoPage() {
                     <span>
                       O rastreamento está a{" "}
                       <strong>{formatarPercent(Math.abs(dem.percentualRastreado - 1))}</strong> do
-                      faturamento (gap acima de 5 p.p.). Pode haver vendas canceladas, devolvidas ou
-                      remessas emitidas em outro mês.
+                      faturamento (gap acima de 5 p.p.). O diagnóstico consulta o Omie{" "}
+                      <strong>em tempo real</strong> para achar vendas canceladas, devolvidas ou
+                      remessas emitidas em outro mês (pode levar alguns segundos).
                     </span>
                   </div>
                   <button
@@ -647,7 +661,8 @@ export default function RastreioFaturamentoPage() {
                     Diagnóstico — {rotuloMesAno(competencia)}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Cruzamento das NFs de venda (faturamento) com as contas a receber da competência.
+                    Consulta em tempo real no Omie: NFs de venda × contas a receber da competência
+                    (reflete cancelamentos/devoluções feitos depois).
                   </p>
                 </div>
                 <button
