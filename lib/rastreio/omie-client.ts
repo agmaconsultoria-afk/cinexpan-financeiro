@@ -131,7 +131,7 @@ export async function callOmie<T = unknown>(
     // Resposta malformada (às vezes o Omie devolve HTML/erro parcial) — costuma ser
     // transitória, então espera e tenta de novo.
     if (tentativasRestantes > 0) {
-      await sleep(4000);
+      await sleep(2000);
       return callOmie<T>(cred, recurso, call, param, tentativasRestantes - 1);
     }
     throw new Error(`Resposta inválida do Omie (HTTP ${status}): ${texto.slice(0, 200)}`);
@@ -150,7 +150,7 @@ export async function callOmie<T = unknown>(
     // Erro transitório do servidor do Omie (resposta quebrada / indisponível) —
     // aguarda um pouco e tenta novamente.
     if (/broken response|application server|soap-error|serviço|servidor|timeout|indispon/i.test(fs) && tentativasRestantes > 0) {
-      await sleep(5000);
+      await sleep(2500);
       return callOmie<T>(cred, recurso, call, param, tentativasRestantes - 1);
     }
     throw new Error(`Omie: ${fs}`);
@@ -1168,8 +1168,8 @@ export async function listarNotasFiscais(
     }
     pagina++;
     if (pagina > totalPaginas) break;
-    // nfconsultar: sleep reduzido pois usamos 100 reg/página e busca binária já "aqueceu"
-    await sleep(fonte === "nfconsultar" ? 100 : 200);
+    // nfconsultar: sleep curto entre páginas (busca binária já localizou o mês)
+    await sleep(fonte === "nfconsultar" ? 40 : 200);
   } while (pagina <= totalPaginas);
 
   // Pós-filtro por data de emissão — garante que, mesmo quando o filtro da API
