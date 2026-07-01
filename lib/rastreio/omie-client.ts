@@ -980,7 +980,26 @@ export async function listarNotasFiscais(
         const nIdReceb = num(compl.nIdReceb);
         const pedidoObj = (registro.pedido as Record<string, unknown>) ?? {};
         const opPedido = (pedidoObj.opPedido ?? "").toString().trim();
-        const operacaoNF = opPedido || "(sem pedido)";
+        // opPedido é o código da operação do pedido no Omie:
+        //   11 = Pedido de Venda (faturamento)   14 = Remessa de Produto (não é venda)
+        const rotuloOp: Record<string, string> = { "11": "Pedido de Venda", "14": "Remessa de Produto" };
+        const operacaoNF = rotuloOp[opPedido] ?? (opPedido ? `Operação ${opPedido}` : "(sem pedido)");
+
+        // Remessa (opPedido 14) não é faturamento de venda — fica de fora.
+        if (opPedido === "14") {
+          if (det.length > 0) {
+            const cfopsNF = Array.from(new Set(det.map((item) => {
+              const prod = (item.prod as Record<string, unknown>) ?? {};
+              return ((pega(prod, "CFOP", "cfop") ?? "").toString()).replace(/\./g, "");
+            }).filter(Boolean))).join(", ");
+            const totalNF = det.reduce((s, item) => {
+              const prod = (item.prod as Record<string, unknown>) ?? {};
+              return s + num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0);
+            }, 0);
+            excluidas.push({ nf: nfNum, dataEmissao, operacao: operacaoNF, cfops: cfopsNF, total: totalNF });
+          }
+          continue;
+        }
 
         if (det.length > 0) {
           for (const item of det) {
