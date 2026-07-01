@@ -103,7 +103,7 @@ export async function callOmie<T = unknown>(
   recurso: string,
   call: string,
   param: Record<string, unknown>,
-  tentativasRestantes = 2
+  tentativasRestantes = 3
 ): Promise<T> {
   const url = `${OMIE_BASE}/${recurso}`;
   const bodyObj = { call, app_key: cred.appKey, app_secret: cred.appSecret, param: [param] };
@@ -128,6 +128,12 @@ export async function callOmie<T = unknown>(
   try {
     json = JSON.parse(texto);
   } catch {
+    // Resposta malformada (às vezes o Omie devolve HTML/erro parcial) — costuma ser
+    // transitória, então espera e tenta de novo.
+    if (tentativasRestantes > 0) {
+      await sleep(4000);
+      return callOmie<T>(cred, recurso, call, param, tentativasRestantes - 1);
+    }
     throw new Error(`Resposta inválida do Omie (HTTP ${status}): ${texto.slice(0, 200)}`);
   }
 
@@ -139,6 +145,12 @@ export async function callOmie<T = unknown>(
       const m = fs.match(/(\d+)\s*segundo/i);
       const espera = Math.min((m ? parseInt(m[1], 10) : 20) + 2, 70);
       await sleep(espera * 1000);
+      return callOmie<T>(cred, recurso, call, param, tentativasRestantes - 1);
+    }
+    // Erro transitório do servidor do Omie (resposta quebrada / indisponível) —
+    // aguarda um pouco e tenta novamente.
+    if (/broken response|application server|soap-error|serviço|servidor|timeout|indispon/i.test(fs) && tentativasRestantes > 0) {
+      await sleep(5000);
       return callOmie<T>(cred, recurso, call, param, tentativasRestantes - 1);
     }
     throw new Error(`Omie: ${fs}`);
@@ -775,7 +787,9 @@ export async function listarNotasFiscais(
   const buildParamNF = (p: number): Record<string, unknown> => {
     // cDetalhesPedido: "S" faz o Omie devolver o objeto `pedido` (com opPedido =
     // a "Operação" que o relatório usa: Pedido de Venda / Remessa / Devolução).
-    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 100, cDetalhesPedido: "S" };
+    // Como isso deixa a resposta bem mais pesada, usamos 50 registros/página para
+    // não estourar o limite do servidor do Omie (erro "Broken response (BG)").
+    const pm: Record<string, unknown> = { pagina: p, registros_por_pagina: 50, cDetalhesPedido: "S" };
     if (opcoes.dataDe) pm.filtrar_por_data_de = opcoes.dataDe;
     if (opcoes.dataAte) pm.filtrar_por_data_ate = opcoes.dataAte;
     return pm;
