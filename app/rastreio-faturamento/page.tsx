@@ -186,6 +186,8 @@ export default function RastreioFaturamentoPage() {
   const [diag, setDiag] = useState<DiagResultado | null>(null);
   const [diagErro, setDiagErro] = useState<string | null>(null);
   const [gapLimite, setGapLimite] = useState(5);
+  // Relatório consolidado (todas as competências) — visão de impressão.
+  const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
 
   // Mês atual no formato YYYY-MM — para ocultar "Ainda Falta Receber" em meses passados.
   const mesAtual = new Date().toISOString().slice(0, 7);
@@ -197,6 +199,45 @@ export default function RastreioFaturamentoPage() {
         ? montarDemonstrativo(contas, competencia, visao, faturamento, pf, faturamentoOmie)
         : null,
     [contas, competencia, visao, faturamento, pf, faturamentoOmie]
+  );
+
+  // Relatório consolidado: uma linha por competência com todas as métricas.
+  const relatorio = useMemo(
+    () =>
+      competencias.map((comp) => {
+        const doMes = contas.filter((c) => c.competencia === comp);
+        const aReceber = doMes.reduce((a, c) => a + c.valorAReceber, 0);
+        const recebido = doMes.reduce((a, c) => a + c.valorRecebidoCalc, 0);
+        const atrasado = doMes.reduce((a, c) => a + c.atraso, 0);
+        const desconto = doMes.reduce((a, c) => a + c.descontoCalc, 0);
+        const juros = doMes.reduce((a, c) => a + c.jurosMulta, 0);
+        const rastreado = aReceber + recebido + desconto;
+        const fatOmie = (faturamentoOmie[comp] ?? 0) > 0 ? faturamentoOmie[comp] : faturamento[comp] ?? 0;
+        const pfMes = vendasPF[comp] ?? 0;
+        const base = fatOmie + pfMes;
+        const perc = base > 0 ? rastreado / base : 0;
+        return { comp, fatOmie, pf: pfMes, base, aReceber, recebido, atrasado, desconto, juros, rastreado, perc };
+      }),
+    [competencias, contas, faturamentoOmie, faturamento, vendasPF]
+  );
+
+  const totaisRel = useMemo(
+    () =>
+      relatorio.reduce(
+        (a, r) => ({
+          fatOmie: a.fatOmie + r.fatOmie,
+          pf: a.pf + r.pf,
+          base: a.base + r.base,
+          aReceber: a.aReceber + r.aReceber,
+          recebido: a.recebido + r.recebido,
+          atrasado: a.atrasado + r.atrasado,
+          desconto: a.desconto + r.desconto,
+          juros: a.juros + r.juros,
+          rastreado: a.rastreado + r.rastreado,
+        }),
+        { fatOmie: 0, pf: 0, base: 0, aReceber: 0, recebido: 0, atrasado: 0, desconto: 0, juros: 0, rastreado: 0 }
+      ),
+    [relatorio]
   );
 
   // Valor de uma conta para uma coluna (respeita a visão).
@@ -339,6 +380,110 @@ export default function RastreioFaturamentoPage() {
     return <div className="text-slate-500">Carregando…</div>;
   }
 
+  // ---- Relatório consolidado (visão de impressão) ----
+  if (mostrarRelatorio) {
+    const periodo =
+      relatorio.length > 0
+        ? `${rotuloMesAno(relatorio[0].comp)} a ${rotuloMesAno(relatorio[relatorio.length - 1].comp)}`
+        : "—";
+    const neg = (v: number) => (v > 0.005 ? formatarMoeda(-v) : formatarMoeda(0));
+    return (
+      <div>
+        <style>{`@media print { @page { size: A4 landscape; margin: 10mm; } }`}</style>
+        <div className="no-print mb-4 flex items-center justify-between gap-2">
+          <button
+            onClick={() => setMostrarRelatorio(false)}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            ← Voltar
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+          >
+            <Printer className="h-4 w-4" /> Imprimir / PDF
+          </button>
+        </div>
+
+        <div className="card overflow-hidden">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h2 className="text-lg font-bold text-brand-800">
+              Relatório de Rastreamento de Faturamento
+            </h2>
+            <p className="text-xs text-slate-500">
+              Período: {periodo} · {relatorio.length} competências
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-xs tabular-nums sm:text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                  <th className="px-3 py-2.5 text-left font-medium">Competência</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Fat. Omie</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Fat. PF</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Fat. do Mês</th>
+                  <th className="px-3 py-2.5 text-right font-medium">À Receber</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Recebido</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Atrasado</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Descontos</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Juros</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Rastreado</th>
+                  <th className="px-3 py-2.5 text-right font-medium">% Rastr.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {relatorio.map((r) => (
+                  <tr key={r.comp} className="border-b border-slate-100">
+                    <td className="whitespace-nowrap px-3 py-2 text-left font-medium capitalize text-slate-700">
+                      {rotuloMesAno(r.comp)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatarMoeda(r.fatOmie)}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{formatarMoeda(r.pf)}</td>
+                    <td className="px-3 py-2 text-right font-medium text-slate-800">{formatarMoeda(r.base)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatarMoeda(r.aReceber)}</td>
+                    <td className="px-3 py-2 text-right text-emerald-700">{formatarMoeda(r.recebido)}</td>
+                    <td className="px-3 py-2 text-right text-rose-600">{neg(r.atrasado)}</td>
+                    <td className="px-3 py-2 text-right text-rose-600">{neg(r.desconto)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatarMoeda(r.juros)}</td>
+                    <td className="px-3 py-2 text-right font-medium text-slate-800">{formatarMoeda(r.rastreado)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-brand-700">{formatarPercent(r.perc)}</td>
+                  </tr>
+                ))}
+                {relatorio.length === 0 && (
+                  <tr>
+                    <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
+                      Nenhuma competência com dados.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="bg-brand-50 font-bold text-brand-900">
+                  <td className="px-3 py-2.5 text-left">Total</td>
+                  <td className="px-3 py-2.5 text-right">{formatarMoeda(totaisRel.fatOmie)}</td>
+                  <td className="px-3 py-2.5 text-right">{formatarMoeda(totaisRel.pf)}</td>
+                  <td className="px-3 py-2.5 text-right">{formatarMoeda(totaisRel.base)}</td>
+                  <td className="px-3 py-2.5 text-right">{formatarMoeda(totaisRel.aReceber)}</td>
+                  <td className="px-3 py-2.5 text-right">{formatarMoeda(totaisRel.recebido)}</td>
+                  <td className="px-3 py-2.5 text-right">{neg(totaisRel.atrasado)}</td>
+                  <td className="px-3 py-2.5 text-right">{neg(totaisRel.desconto)}</td>
+                  <td className="px-3 py-2.5 text-right">{formatarMoeda(totaisRel.juros)}</td>
+                  <td className="px-3 py-2.5 text-right">{formatarMoeda(totaisRel.rastreado)}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {formatarPercent(totaisRel.base > 0 ? totaisRel.rastreado / totaisRel.base : 0)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div className="px-5 py-3 text-xs text-slate-400">
+            À Receber + Recebido + Descontos = Rastreado · % = Rastreado ÷ Faturamento do Mês (Omie + PF)
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const colLabel =
     visao === "Vencimento" ? "Mês de Vencimento" : "Mês Previsto de Recebimento";
 
@@ -385,6 +530,12 @@ export default function RastreioFaturamentoPage() {
                 {sincronizando ? "Sincronizando…" : "Sincronizar Omie"}
               </button>
             )}
+            <button
+              onClick={() => setMostrarRelatorio(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <FileSpreadsheet className="h-4 w-4" /> Relatório completo
+            </button>
             <button
               onClick={() => window.print()}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
