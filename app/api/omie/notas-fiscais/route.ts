@@ -44,44 +44,6 @@ export async function GET(req: NextRequest) {
     dataAte = searchParams.get("ate") ?? undefined;
   }
 
-  // Modo debug de pedido: consulta um pedido por código, OU lista pedidos do
-  // período, para descobrir onde fica a "Operação" que o relatório do Omie usa.
-  const pedidoDebug = searchParams.get("pedido");
-  if (pedidoDebug) {
-    const resultados: Record<string, unknown> = { ok: true, pedidoDebug: true };
-    if (pedidoDebug === "list") {
-      // Lista os primeiros pedidos do período (estrutura completa p/ ver a operação)
-      const p: Record<string, unknown> = { pagina: 1, registros_por_pagina: 3, apenas_importado_api: "N" };
-      if (dataDe) p.filtrar_por_data_de = dataDe;
-      if (dataAte) p.filtrar_por_data_ate = dataAte;
-      for (const [rec, met] of [
-        ["produtos/pedido/", "ListarPedidos"],
-        ["pedido/pedido_venda_produto/", "ListarPedidos"],
-      ] as [string, string][]) {
-        try {
-          resultados[`${rec}${met}`] = await callOmie(cred, rec, met, p);
-        } catch (e) {
-          resultados[`${rec}${met}_erro`] = e instanceof Error ? e.message : String(e);
-        }
-      }
-      return NextResponse.json(resultados);
-    }
-    const ids = pedidoDebug.split(",").map((s) => s.trim()).filter(Boolean);
-    for (const id of ids) {
-      for (const [rec, met, params] of [
-        ["produtos/pedido/", "ConsultarPedido", { codigo_pedido: Number(id) }],
-        ["pedido/pedido_venda_produto/", "ConsultarPedido", { codigo_pedido: Number(id) }],
-      ] as [string, string, Record<string, unknown>][]) {
-        try {
-          resultados[`${rec}_${id}`] = await callOmie(cred, rec, met, params);
-        } catch (e) {
-          resultados[`${rec}_${id}_erro`] = e instanceof Error ? e.message : String(e);
-        }
-      }
-    }
-    return NextResponse.json(resultados);
-  }
-
   // Modo debug: amostra bruta dos endpoints de NF para diagnóstico.
   if (searchParams.get("debug") === "1") {
     const resultados: Record<string, unknown> = { ok: true, debug: true };
@@ -103,61 +65,13 @@ export async function GET(req: NextRequest) {
   try {
     const resultado = await listarNotasFiscais(cred, { dataDe, dataAte });
 
-    // Resumo por natureza da operação (ide.natOp), por operação derivada do CFOP
-    // (Venda/Remessa/Devolução) e por CFOP — ajuda a validar contra o relatório Omie.
-    const resumoPorNatOp: Record<string, { nfs: number; total: number }> = {};
-    const resumoPorOperacao: Record<string, { nfs: number; total: number }> = {};
-    const resumoPorCFOP: Record<string, { nfs: number; total: number }> = {};
-    const resumoPorCategoria: Record<string, { nfs: number; total: number }> = {};
-    const resumoPorFinNFe: Record<string, { nfs: number; total: number }> = {};
-    const resumoPorDevolvido: Record<string, { nfs: number; total: number }> = {};
-    const rotuloFinNFe: Record<string, string> = { "1": "1 - Normal", "2": "2 - Complementar", "3": "3 - Ajuste", "4": "4 - Devolução" };
-    for (const item of resultado.itens) {
-      const chaveNat = item.natOp || "(sem natureza)";
-      if (!resumoPorNatOp[chaveNat]) resumoPorNatOp[chaveNat] = { nfs: 0, total: 0 };
-      resumoPorNatOp[chaveNat].nfs++;
-      resumoPorNatOp[chaveNat].total += item.totalMercadoria;
-
-      const chaveOp = item.operacao || "(sem operação)";
-      if (!resumoPorOperacao[chaveOp]) resumoPorOperacao[chaveOp] = { nfs: 0, total: 0 };
-      resumoPorOperacao[chaveOp].nfs++;
-      resumoPorOperacao[chaveOp].total += item.totalMercadoria;
-
-      const chaveCfop = item.cfop || "(sem CFOP)";
-      if (!resumoPorCFOP[chaveCfop]) resumoPorCFOP[chaveCfop] = { nfs: 0, total: 0 };
-      resumoPorCFOP[chaveCfop].nfs++;
-      resumoPorCFOP[chaveCfop].total += item.totalMercadoria;
-
-      const chaveCat = item.categoria || "(sem categoria)";
-      if (!resumoPorCategoria[chaveCat]) resumoPorCategoria[chaveCat] = { nfs: 0, total: 0 };
-      resumoPorCategoria[chaveCat].nfs++;
-      resumoPorCategoria[chaveCat].total += item.totalMercadoria;
-
-      const chaveFin = rotuloFinNFe[item.finNFe] || item.finNFe || "(sem finNFe)";
-      if (!resumoPorFinNFe[chaveFin]) resumoPorFinNFe[chaveFin] = { nfs: 0, total: 0 };
-      resumoPorFinNFe[chaveFin].nfs++;
-      resumoPorFinNFe[chaveFin].total += item.totalMercadoria;
-
-      const chaveDev = item.devParcial === "S" ? "Devolução parcial" : item.devolvido === "S" ? "Devolvido (total)" : "Não devolvido";
-      if (!resumoPorDevolvido[chaveDev]) resumoPorDevolvido[chaveDev] = { nfs: 0, total: 0 };
-      resumoPorDevolvido[chaveDev].nfs++;
-      resumoPorDevolvido[chaveDev].total += item.totalMercadoria;
-    }
-
     return NextResponse.json({
       ok: true,
       fonte: resultado.fonte,
       totalNFs: resultado.totalNFs,
       truncado: resultado.truncado,
       itens: resultado.itens,
-      resumoPorNatOp,
-      resumoPorOperacao,
-      resumoPorCFOP,
-      resumoPorCategoria,
-      resumoPorFinNFe,
-      resumoPorDevolvido,
       excluidas: resultado.excluidas,
-      primeiroCompl: resultado.primeiroCompl,
       // Incluído apenas quando itens = 0 — ajuda a diagnosticar estrutura real da API
       ...(resultado.primeiroRegistroBruto !== undefined ? { primeiroRegistroBruto: resultado.primeiroRegistroBruto } : {}),
     });

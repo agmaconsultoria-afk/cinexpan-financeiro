@@ -18,6 +18,14 @@ interface HistoricoItem {
   processadoEm: string;
 }
 
+interface Excluida {
+  nf: string;
+  dataEmissao: string;
+  operacao: string;
+  cfops: string;
+  total: number;
+}
+
 function formatarDataHora(iso: string): string {
   try {
     return new Date(iso).toLocaleString("pt-BR", {
@@ -44,23 +52,7 @@ export default function FaturamentoNFPage() {
   const [gravado, setGravado] = useState(false);
   const [mesGravado, setMesGravado] = useState("");
 
-  const [resumoPorNatOp, setResumoPorNatOp] = useState<Record<string, { nfs: number; total: number }> | null>(null);
-  const [resumoPorOperacao, setResumoPorOperacao] = useState<Record<string, { nfs: number; total: number }> | null>(null);
-  const [resumoPorCFOP, setResumoPorCFOP] = useState<Record<string, { nfs: number; total: number }> | null>(null);
-  const [resumoPorCategoria, setResumoPorCategoria] = useState<Record<string, { nfs: number; total: number }> | null>(null);
-  const [resumoPorFinNFe, setResumoPorFinNFe] = useState<Record<string, { nfs: number; total: number }> | null>(null);
-  const [resumoPorDevolvido, setResumoPorDevolvido] = useState<Record<string, { nfs: number; total: number }> | null>(null);
-  const [mostrarDevolvido, setMostrarDevolvido] = useState(false);
-  const [excluidas, setExcluidas] = useState<{ nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] | null>(null);
-  const [detalhe196, setDetalhe196] = useState<{ nf: string; cfops: string; cliente: string; produto: string; total: number }[] | null>(null);
-  const [mostrarDetalhe196, setMostrarDetalhe196] = useState(false);
-  const [detalhe6107, setDetalhe6107] = useState<{ nf: string; categoria: string; cliente: string; nIdPedido: number; nIdReceb: number; total: number }[] | null>(null);
-  const [mostrarDetalhe6107, setMostrarDetalhe6107] = useState(false);
-  const [mostrarResumo, setMostrarResumo] = useState(false);
-  const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
-  const [mostrarCFOP, setMostrarCFOP] = useState(false);
-  const [mostrarCategoria, setMostrarCategoria] = useState(false);
-  const [mostrarFinNFe, setMostrarFinNFe] = useState(false);
+  const [excluidas, setExcluidas] = useState<Excluida[] | null>(null);
   const [mostrarExcluidas, setMostrarExcluidas] = useState(false);
 
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
@@ -102,24 +94,8 @@ export default function FaturamentoNFPage() {
     setErro("");
     setBuscou(false);
     setGravado(false);
-    setResumoPorNatOp(null);
-    setResumoPorOperacao(null);
-    setResumoPorCFOP(null);
-    setResumoPorCategoria(null);
-    setResumoPorFinNFe(null);
-    setResumoPorDevolvido(null);
-    setMostrarDevolvido(false);
     setExcluidas(null);
-    setDetalhe196(null);
-    setDetalhe6107(null);
-    setMostrarResumo(false);
-    setMostrarResumoOp(false);
-    setMostrarCFOP(false);
-    setMostrarCategoria(false);
-    setMostrarFinNFe(false);
     setMostrarExcluidas(false);
-    setMostrarDetalhe196(false);
-    setMostrarDetalhe6107(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
       const data = await res.json();
@@ -127,40 +103,10 @@ export default function FaturamentoNFPage() {
         setErro(data.erro ?? "Erro ao buscar notas fiscais.");
         return;
       }
-      type ItemNF = { totalMercadoria: number; nf: string; cfop?: string; categoria?: string; clienteNome?: string; produto?: string; nIdPedido?: number; nIdReceb?: number };
-      const itens: ItemNF[] = data.itens ?? [];
+      const itens: { totalMercadoria: number; nf: string }[] = data.itens ?? [];
       setTotalNFs(new Set(itens.map((i) => i.nf)).size);
       setTotalMerc(itens.reduce((s, i) => s + i.totalMercadoria, 0));
-      setResumoPorNatOp(data.resumoPorNatOp ?? null);
-      setResumoPorOperacao(data.resumoPorOperacao ?? null);
-      setResumoPorCFOP(data.resumoPorCFOP ?? null);
-      setResumoPorCategoria(data.resumoPorCategoria ?? null);
-      setResumoPorFinNFe(data.resumoPorFinNFe ?? null);
-      setResumoPorDevolvido(data.resumoPorDevolvido ?? null);
       setExcluidas(data.excluidas ?? null);
-
-      // Detalhe da categoria 1.01.96 (misturada) — agrupa por NF p/ achar o padrão
-      const grupos196: Record<string, { nf: string; cfops: Set<string>; cliente: string; produto: string; total: number }> = {};
-      for (const it of itens) {
-        if ((it.categoria ?? "") !== "1.01.96") continue;
-        if (!grupos196[it.nf]) grupos196[it.nf] = { nf: it.nf, cfops: new Set(), cliente: it.clienteNome ?? "", produto: it.produto ?? "", total: 0 };
-        if (it.cfop) grupos196[it.nf].cfops.add(it.cfop);
-        grupos196[it.nf].total += it.totalMercadoria;
-      }
-      const lista196 = Object.values(grupos196).map((g) => ({
-        nf: g.nf, cfops: Array.from(g.cfops).join(", "), cliente: g.cliente, produto: g.produto, total: g.total,
-      }));
-      setDetalhe196(lista196.length ? lista196 : null);
-
-      // Detalhe do CFOP 6107 (venda a não contribuinte) — diferença de R$25.000 vs pivot
-      const grupos6107: Record<string, { nf: string; categoria: string; cliente: string; nIdPedido: number; nIdReceb: number; total: number }> = {};
-      for (const it of itens) {
-        if ((it.cfop ?? "") !== "6107") continue;
-        if (!grupos6107[it.nf]) grupos6107[it.nf] = { nf: it.nf, categoria: it.categoria ?? "", cliente: it.clienteNome ?? "", nIdPedido: it.nIdPedido ?? 0, nIdReceb: it.nIdReceb ?? 0, total: 0 };
-        grupos6107[it.nf].total += it.totalMercadoria;
-      }
-      const lista6107 = Object.values(grupos6107);
-      setDetalhe6107(lista6107.length ? lista6107 : null);
       setBuscou(true);
     } catch {
       setErro("Erro de conexão. Tente novamente.");
@@ -268,326 +214,6 @@ export default function FaturamentoNFPage() {
             </div>
           )}
 
-          {resumoPorNatOp && Object.keys(resumoPorNatOp).length > 1 && (
-            <div className="card mb-4 overflow-hidden">
-              <button
-                onClick={() => setMostrarResumo((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
-              >
-                <span className="font-medium text-slate-600">Composição por natureza de operação</span>
-                <span className="text-xs">{mostrarResumo ? "▲ ocultar" : "▼ ver"}</span>
-              </button>
-              {mostrarResumo && (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="border-y border-slate-200 text-left text-slate-500">
-                      <th className="px-5 py-2 font-medium">Natureza da operação</th>
-                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
-                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
-                      <th className="w-full" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(resumoPorNatOp)
-                      .sort((a, b) => b[1].total - a[1].total)
-                      .map(([nat, v]) => (
-                        <tr key={nat} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-2 text-slate-700">{nat || "(sem natureza)"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
-                            {formatarMoeda(v.total)}
-                          </td>
-                          <td className="w-full" />
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {resumoPorOperacao && Object.keys(resumoPorOperacao).length > 0 && (
-            <div className="card mb-4 overflow-hidden">
-              <button
-                onClick={() => setMostrarResumoOp((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
-              >
-                <span className="font-medium text-slate-600">Composição por operação</span>
-                <span className="text-xs">{mostrarResumoOp ? "▲ ocultar" : "▼ ver"}</span>
-              </button>
-              {mostrarResumoOp && (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="border-y border-slate-200 text-left text-slate-500">
-                      <th className="px-5 py-2 font-medium">Operação</th>
-                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
-                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
-                      <th className="w-full" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(resumoPorOperacao)
-                      .sort((a, b) => b[1].total - a[1].total)
-                      .map(([op, v]) => (
-                        <tr key={op} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-2 text-slate-700">{op}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
-                            {formatarMoeda(v.total)}
-                          </td>
-                          <td className="w-full" />
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {resumoPorDevolvido && Object.keys(resumoPorDevolvido).length > 0 && (
-            <div className="card mb-4 overflow-hidden border-amber-200">
-              <button
-                onClick={() => setMostrarDevolvido((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
-              >
-                <span className="font-medium text-amber-700">Composição por devolução (pedido devolvido?)</span>
-                <span className="text-xs">{mostrarDevolvido ? "▲ ocultar" : "▼ ver"}</span>
-              </button>
-              {mostrarDevolvido && (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="border-y border-slate-200 text-left text-slate-500">
-                      <th className="px-5 py-2 font-medium">Situação</th>
-                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
-                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
-                      <th className="w-full" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(resumoPorDevolvido)
-                      .sort((a, b) => b[1].total - a[1].total)
-                      .map(([dev, v]) => (
-                        <tr key={dev} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-2 text-slate-700">{dev}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
-                            {formatarMoeda(v.total)}
-                          </td>
-                          <td className="w-full" />
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {resumoPorCFOP && Object.keys(resumoPorCFOP).length > 0 && (
-            <div className="card mb-4 overflow-hidden">
-              <button
-                onClick={() => setMostrarCFOP((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
-              >
-                <span className="font-medium text-slate-600">Composição por CFOP</span>
-                <span className="text-xs">{mostrarCFOP ? "▲ ocultar" : "▼ ver"}</span>
-              </button>
-              {mostrarCFOP && (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="border-y border-slate-200 text-left text-slate-500">
-                      <th className="px-5 py-2 font-medium">CFOP</th>
-                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
-                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
-                      <th className="w-full" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(resumoPorCFOP)
-                      .sort((a, b) => b[1].total - a[1].total)
-                      .map(([cfop, v]) => (
-                        <tr key={cfop} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-2 text-slate-700">{cfop}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
-                            {formatarMoeda(v.total)}
-                          </td>
-                          <td className="w-full" />
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {resumoPorCategoria && Object.keys(resumoPorCategoria).length > 0 && (
-            <div className="card mb-4 overflow-hidden">
-              <button
-                onClick={() => setMostrarCategoria((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
-              >
-                <span className="font-medium text-slate-600">Composição por categoria (cCodCateg)</span>
-                <span className="text-xs">{mostrarCategoria ? "▲ ocultar" : "▼ ver"}</span>
-              </button>
-              {mostrarCategoria && (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="border-y border-slate-200 text-left text-slate-500">
-                      <th className="px-5 py-2 font-medium">Categoria</th>
-                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
-                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
-                      <th className="w-full" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(resumoPorCategoria)
-                      .sort((a, b) => b[1].total - a[1].total)
-                      .map(([cat, v]) => (
-                        <tr key={cat} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-2 text-slate-700">{cat}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
-                            {formatarMoeda(v.total)}
-                          </td>
-                          <td className="w-full" />
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {detalhe196 && detalhe196.length > 0 && (
-            <div className="card mb-4 overflow-hidden border-amber-200">
-              <button
-                onClick={() => setMostrarDetalhe196((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
-              >
-                <span className="font-medium text-amber-700">
-                  Detalhe da categoria 1.01.96 ({detalhe196.length} NFs) — categoria misturada
-                </span>
-                <span className="text-xs">{mostrarDetalhe196 ? "▲ ocultar" : "▼ ver"}</span>
-              </button>
-              {mostrarDetalhe196 && (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="border-y border-slate-200 text-left text-slate-500">
-                      <th className="px-5 py-2 font-medium">NF</th>
-                      <th className="px-3 py-2 font-medium">CFOPs</th>
-                      <th className="px-3 py-2 font-medium">Cliente</th>
-                      <th className="px-3 py-2 font-medium">Produto</th>
-                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
-                      <th className="w-full" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detalhe196
-                      .slice()
-                      .sort((a, b) => b.total - a.total)
-                      .map((d) => (
-                        <tr key={d.nf} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-2 text-slate-700">{d.nf.replace(/^0+/, "")}</td>
-                          <td className="px-3 py-2 text-slate-500">{d.cfops}</td>
-                          <td className="px-3 py-2 text-slate-500">{d.cliente}</td>
-                          <td className="px-3 py-2 text-slate-500">{d.produto}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
-                            {formatarMoeda(d.total)}
-                          </td>
-                          <td className="w-full" />
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {detalhe6107 && detalhe6107.length > 0 && (
-            <div className="card mb-4 overflow-hidden border-amber-200">
-              <button
-                onClick={() => setMostrarDetalhe6107((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
-              >
-                <span className="font-medium text-amber-700">
-                  Detalhe do CFOP 6107 ({detalhe6107.length} NFs) — diferença de R$25.000
-                </span>
-                <span className="text-xs">{mostrarDetalhe6107 ? "▲ ocultar" : "▼ ver"}</span>
-              </button>
-              {mostrarDetalhe6107 && (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="border-y border-slate-200 text-left text-slate-500">
-                      <th className="px-5 py-2 font-medium">NF</th>
-                      <th className="px-3 py-2 font-medium">Categoria</th>
-                      <th className="px-3 py-2 font-medium">Cliente</th>
-                      <th className="px-3 py-2 text-right font-medium">nIdPedido</th>
-                      <th className="px-3 py-2 text-right font-medium">nIdReceb</th>
-                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
-                      <th className="w-full" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detalhe6107
-                      .slice()
-                      .sort((a, b) => b.total - a.total)
-                      .map((d) => (
-                        <tr key={d.nf} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-2 text-slate-700">{d.nf.replace(/^0+/, "")}</td>
-                          <td className="px-3 py-2 text-slate-500">{d.categoria}</td>
-                          <td className="px-3 py-2 text-slate-500">{d.cliente}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{d.nIdPedido || "—"}</td>
-                          <td className={`px-3 py-2 text-right tabular-nums ${d.nIdReceb ? "font-semibold text-rose-600" : "text-slate-500"}`}>{d.nIdReceb || "—"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
-                            {formatarMoeda(d.total)}
-                          </td>
-                          <td className="w-full" />
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {resumoPorFinNFe && Object.keys(resumoPorFinNFe).length > 0 && (
-            <div className="card mb-4 overflow-hidden">
-              <button
-                onClick={() => setMostrarFinNFe((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
-              >
-                <span className="font-medium text-slate-600">Composição por finalidade da NF (finNFe)</span>
-                <span className="text-xs">{mostrarFinNFe ? "▲ ocultar" : "▼ ver"}</span>
-              </button>
-              {mostrarFinNFe && (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="border-y border-slate-200 text-left text-slate-500">
-                      <th className="px-5 py-2 font-medium">Finalidade</th>
-                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
-                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
-                      <th className="w-full" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(resumoPorFinNFe)
-                      .sort((a, b) => b[1].total - a[1].total)
-                      .map(([fin, v]) => (
-                        <tr key={fin} className="border-b border-slate-100 last:border-0">
-                          <td className="px-5 py-2 text-slate-700">{fin}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
-                            {formatarMoeda(v.total)}
-                          </td>
-                          <td className="w-full" />
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
           {excluidas && excluidas.length > 0 && (
             <div className="card mb-4 overflow-hidden">
               <button
@@ -595,7 +221,7 @@ export default function FaturamentoNFPage() {
                 className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
               >
                 <span className="font-medium text-slate-600">
-                  NFs excluídas do faturamento ({excluidas.length}) — sem pedido de venda
+                  NFs fora do faturamento ({excluidas.length}) — Remessa e Devolução
                 </span>
                 <span className="text-xs">{mostrarExcluidas ? "▲ ocultar" : "▼ ver"}</span>
               </button>
@@ -605,7 +231,7 @@ export default function FaturamentoNFPage() {
                     <tr className="border-y border-slate-200 text-left text-slate-500">
                       <th className="px-5 py-2 font-medium">NF</th>
                       <th className="px-3 py-2 font-medium">Emissão</th>
-                      <th className="px-3 py-2 font-medium">Operação</th>
+                      <th className="px-3 py-2 font-medium">Motivo</th>
                       <th className="px-3 py-2 font-medium">CFOPs</th>
                       <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
                       <th className="w-full" />
