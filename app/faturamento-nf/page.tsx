@@ -52,6 +52,8 @@ export default function FaturamentoNFPage() {
   const [excluidas, setExcluidas] = useState<{ nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] | null>(null);
   const [detalhe196, setDetalhe196] = useState<{ nf: string; cfops: string; cliente: string; produto: string; total: number }[] | null>(null);
   const [mostrarDetalhe196, setMostrarDetalhe196] = useState(false);
+  const [detalhe6107, setDetalhe6107] = useState<{ nf: string; categoria: string; cliente: string; produto: string; total: number }[] | null>(null);
+  const [mostrarDetalhe6107, setMostrarDetalhe6107] = useState(false);
   const [mostrarResumo, setMostrarResumo] = useState(false);
   const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
   const [mostrarCFOP, setMostrarCFOP] = useState(false);
@@ -105,6 +107,7 @@ export default function FaturamentoNFPage() {
     setResumoPorFinNFe(null);
     setExcluidas(null);
     setDetalhe196(null);
+    setDetalhe6107(null);
     setMostrarResumo(false);
     setMostrarResumoOp(false);
     setMostrarCFOP(false);
@@ -112,6 +115,7 @@ export default function FaturamentoNFPage() {
     setMostrarFinNFe(false);
     setMostrarExcluidas(false);
     setMostrarDetalhe196(false);
+    setMostrarDetalhe6107(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
       const data = await res.json();
@@ -142,6 +146,16 @@ export default function FaturamentoNFPage() {
         nf: g.nf, cfops: Array.from(g.cfops).join(", "), cliente: g.cliente, produto: g.produto, total: g.total,
       }));
       setDetalhe196(lista196.length ? lista196 : null);
+
+      // Detalhe do CFOP 6107 (venda a não contribuinte) — diferença de R$25.000 vs pivot
+      const grupos6107: Record<string, { nf: string; categoria: string; cliente: string; produto: string; total: number }> = {};
+      for (const it of itens) {
+        if ((it.cfop ?? "") !== "6107") continue;
+        if (!grupos6107[it.nf]) grupos6107[it.nf] = { nf: it.nf, categoria: it.categoria ?? "", cliente: it.clienteNome ?? "", produto: it.produto ?? "", total: 0 };
+        grupos6107[it.nf].total += it.totalMercadoria;
+      }
+      const lista6107 = Object.values(grupos6107);
+      setDetalhe6107(lista6107.length ? lista6107 : null);
       setBuscou(true);
     } catch {
       setErro("Erro de conexão. Tente novamente.");
@@ -432,6 +446,51 @@ export default function FaturamentoNFPage() {
                         <tr key={d.nf} className="border-b border-slate-100 last:border-0">
                           <td className="px-5 py-2 text-slate-700">{d.nf.replace(/^0+/, "")}</td>
                           <td className="px-3 py-2 text-slate-500">{d.cfops}</td>
+                          <td className="px-3 py-2 text-slate-500">{d.cliente}</td>
+                          <td className="px-3 py-2 text-slate-500">{d.produto}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
+                            {formatarMoeda(d.total)}
+                          </td>
+                          <td className="w-full" />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {detalhe6107 && detalhe6107.length > 0 && (
+            <div className="card mb-4 overflow-hidden border-amber-200">
+              <button
+                onClick={() => setMostrarDetalhe6107((v) => !v)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
+              >
+                <span className="font-medium text-amber-700">
+                  Detalhe do CFOP 6107 ({detalhe6107.length} NFs) — diferença de R$25.000
+                </span>
+                <span className="text-xs">{mostrarDetalhe6107 ? "▲ ocultar" : "▼ ver"}</span>
+              </button>
+              {mostrarDetalhe6107 && (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-y border-slate-200 text-left text-slate-500">
+                      <th className="px-5 py-2 font-medium">NF</th>
+                      <th className="px-3 py-2 font-medium">Categoria</th>
+                      <th className="px-3 py-2 font-medium">Cliente</th>
+                      <th className="px-3 py-2 font-medium">Produto</th>
+                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
+                      <th className="w-full" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detalhe6107
+                      .slice()
+                      .sort((a, b) => b.total - a.total)
+                      .map((d) => (
+                        <tr key={d.nf} className="border-b border-slate-100 last:border-0">
+                          <td className="px-5 py-2 text-slate-700">{d.nf.replace(/^0+/, "")}</td>
+                          <td className="px-3 py-2 text-slate-500">{d.categoria}</td>
                           <td className="px-3 py-2 text-slate-500">{d.cliente}</td>
                           <td className="px-3 py-2 text-slate-500">{d.produto}</td>
                           <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
