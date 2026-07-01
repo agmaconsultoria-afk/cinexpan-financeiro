@@ -30,12 +30,16 @@ interface DiagNF {
   situacao?: string;
 }
 interface DiagResultado {
-  totalFaturado: number;
-  totalContas: number;
-  qtdFaturadas: number;
-  qtdContas: number;
-  faturadaSemConta: DiagNF[];
-  contaSemFaturada: DiagNF[];
+  faturamento: number; // faturamento de mercadoria (NFs de venda do mês)
+  financeiroVinculado: number; // Σ valor dos títulos amarrados às NFs de venda
+  recebido: number; // já recebido (títulos + à vista)
+  aReceber: number; // ainda a receber (títulos em aberto)
+  aVista: number; // NFs de venda sem título → recebido no mês
+  gap: number; // faturamento − (financeiro vinculado + à vista)
+  prazoMedioDias: number;
+  timeline: { mes: string; recebido: number; aReceber: number }[];
+  faturadaSemConta: DiagNF[]; // vendas sem conta a receber (à vista/PF)
+  contaSemFaturada: DiagNF[]; // títulos sem venda no mês (NF de outro mês/cancelada)
   excluidas: { nf: string; dataEmissao: string; operacao: string; total: number }[];
 }
 
@@ -332,39 +336,97 @@ export default function RastreioFaturamentoPage() {
         return;
       }
       const norm = (v: unknown) => String(v ?? "").replace(/\D/g, "").replace(/^0+/, "");
-      // NFs de venda (faturamento) agregadas por número — já vêm frescas do Omie.
-      const nfsFaturadas = new Map<string, DiagNF>();
+      const mesDe = (iso?: string) => (iso ?? "").slice(0, 7);
+      const diffDias = (a?: string, b?: string) => {
+        if (!a || !b) return null;
+        const d1 = new Date(`${a}T00:00:00`).getTime();
+        const d2 = new Date(`${b}T00:00:00`).getTime();
+        if (isNaN(d1) || isNaN(d2)) return null;
+        return Math.round((d2 - d1) / 86_400_000);
+      };
+
+      // NFs de venda (faturamento de mercadoria) agregadas por número.
+      const vendaNf = new Map<string, DiagNF>();
       for (const it of (dataNf.itens ?? []) as { nf: string; clienteNome?: string; totalMercadoria?: number }[]) {
         const nf = norm(it.nf);
         if (!nf) continue;
-        const g = nfsFaturadas.get(nf) ?? { nf, cliente: it.clienteNome ?? "", total: 0 };
+        const g = vendaNf.get(nf) ?? { nf, cliente: it.clienteNome ?? "", total: 0 };
         g.total += it.totalMercadoria ?? 0;
-        nfsFaturadas.set(nf, g);
+        vendaNf.set(nf, g);
       }
-      // Contas a receber ONLINE da competência (emissão no mês) agregadas por NF.
-      const nfsContas = new Map<string, DiagNF>();
-      for (const c of (dataCr.contas ?? []) as { notaFiscal?: string; cliente?: string; valorConta?: number; situacao?: string; dataEmissao?: string }[]) {
-        const comp = (c.dataEmissao ?? "").slice(0, 7);
-        if (comp && comp !== competencia) continue; // trava na competência (emissão)
+      const faturamento = [...vendaNf.values()].reduce((a, g) => a + g.total, 0);
+
+      // Contas a receber ONLINE da competência, amarradas às NFs de venda por número.
+      type Conta = { notaFiscal?: string; cliente?: string; valorConta?: number; valorRecebido?: number; valorAReceber?: number; situacao?: string; dataEmissao?: string; vencimento?: string; ultimoRecebimento?: string };
+      const tl = new Map<string, { recebido: number; aReceber: number }>();
+      const addTl = (mes: string, campo: "recebido" | "aReceber", v: number) => {
+        if (!mes || v <= 0.005) return;
+        const g = tl.get(mes) ?? { recebido: 0, aReceber: 0 };
+        g[campo] += v;
+        tl.set(mes, g);
+      };
+      const nfsComTitulo = new Set<string>();
+      const contasSemVenda = new Map<string, DiagNF>();
+      let financeiroVinculado = 0;
+      let recebido = 0;
+      let aReceber = 0;
+      let prazoPond = 0;
+      let prazoPeso = 0;
+      for (const c of (dataCr.contas ?? []) as Conta[]) {
         const nf = norm(c.notaFiscal);
-        if (!nf) continue;
-        const g = nfsContas.get(nf) ?? { nf, cliente: c.cliente ?? "", total: 0, situacao: c.situacao };
-        g.total += c.valorConta ?? 0;
-        nfsContas.set(nf, g);
+        if (!nf || !vendaNf.has(nf)) {
+          // título que não é venda deste mês (NF de outro mês / cancelada / remessa)
+          const comp = mesDe(c.dataEmissao);
+          if (comp && comp !== competencia) continue; // só reporta os do mês
+          const g = contasSemVenda.get(nf || `s/nf-${contasSemVenda.size}`) ?? { nf: nf || "—", cliente: c.cliente ?? "", total: 0, situacao: c.situacao };
+          g.total += c.valorConta ?? 0;
+          contasSemVenda.set(g.nf, g);
+          continue;
+        }
+        nfsComTitulo.add(nf);
+        const rec = c.valorRecebido ?? 0;
+        const aRec = c.valorAReceber ?? 0;
+        financeiroVinculado += c.valorConta ?? 0;
+        recebido += rec;
+        aReceber += aRec;
+        addTl(mesDe(c.ultimoRecebimento), "recebido", rec);
+        addTl(mesDe(c.vencimento), "aReceber", aRec);
+        const d = diffDias(c.dataEmissao, c.vencimento);
+        if (d != null && (c.valorConta ?? 0) > 0) {
+          prazoPond += d * (c.valorConta ?? 0);
+          prazoPeso += c.valorConta ?? 0;
+        }
       }
-      const faturadaSemConta = [...nfsFaturadas.values()]
-        .filter((g) => !nfsContas.has(g.nf))
+
+      // NFs de venda SEM título (à vista/PF) → recebidas no mês de emissão (prazo 0).
+      let aVista = 0;
+      for (const [nf, g] of vendaNf) {
+        if (nfsComTitulo.has(nf)) continue;
+        aVista += g.total;
+        addTl(competencia, "recebido", g.total);
+        prazoPeso += g.total; // prazo 0 dias
+      }
+      recebido += aVista;
+
+      const prazoMedioDias = prazoPeso > 0 ? Math.round(prazoPond / prazoPeso) : 0;
+      const timeline = [...tl.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([mes, v]) => ({ mes, ...v }));
+      const faturadaSemConta = [...vendaNf.values()]
+        .filter((g) => !nfsComTitulo.has(g.nf))
         .sort((a, b) => b.total - a.total);
-      const contaSemFaturada = [...nfsContas.values()]
-        .filter((g) => !nfsFaturadas.has(g.nf))
-        .sort((a, b) => b.total - a.total);
+
       setDiag({
-        totalFaturado: [...nfsFaturadas.values()].reduce((a, g) => a + g.total, 0),
-        totalContas: [...nfsContas.values()].reduce((a, g) => a + g.total, 0),
-        qtdFaturadas: nfsFaturadas.size,
-        qtdContas: nfsContas.size,
+        faturamento,
+        financeiroVinculado,
+        recebido,
+        aReceber,
+        aVista,
+        gap: faturamento - (financeiroVinculado + aVista),
+        prazoMedioDias,
+        timeline,
         faturadaSemConta,
-        contaSemFaturada,
+        contaSemFaturada: [...contasSemVenda.values()].sort((a, b) => b.total - a.total),
         excluidas: dataNf.excluidas ?? [],
       });
       // O sync de contas a receber gravou a competência atualizada na base —
@@ -808,6 +870,21 @@ export default function RastreioFaturamentoPage() {
                   {diagErro && <p className="mt-2 text-xs text-rose-600">{diagErro}</p>}
                 </div>
               )}
+
+              {/* Rastreabilidade — sempre disponível (quando não há alerta de gap) */}
+              {dem.baseFaturamento > 0 && Math.abs(dem.percentualRastreado - 1) * 100 <= gapLimite && (
+                <div className="no-print mt-3">
+                  <button
+                    onClick={executarDiagnostico}
+                    disabled={diagCarregando}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    <Activity className={`h-4 w-4 ${diagCarregando ? "animate-pulse" : ""}`} />
+                    {diagCarregando ? "Analisando…" : "Analisar rastreabilidade do mês"}
+                  </button>
+                  {diagErro && <p className="mt-2 text-xs text-rose-600">{diagErro}</p>}
+                </div>
+              )}
             </div>
 
             <div className="card card-pad">
@@ -843,11 +920,11 @@ export default function RastreioFaturamentoPage() {
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
                 <div>
                   <h3 className="font-semibold text-slate-800">
-                    Diagnóstico — {rotuloMesAno(competencia)}
+                    Rastreabilidade — {rotuloMesAno(competencia)}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Consulta em tempo real no Omie: NFs de venda × contas a receber da competência
-                    (reflete cancelamentos/devoluções feitos depois).
+                    Consulta em tempo real no Omie, ancorada no faturamento: as NFs de venda do mês e
+                    quando os títulos serão recebidos (reflete cancelamentos/devoluções feitos depois).
                   </p>
                 </div>
                 <button
@@ -858,35 +935,85 @@ export default function RastreioFaturamentoPage() {
                 </button>
               </div>
               <div className="space-y-4 p-5">
-                {/* Resumo */}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {/* Resumo da rastreabilidade */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div className="rounded-lg bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">Faturamento (NFs de venda)</div>
+                    <div className="text-xs text-slate-500">Faturamento (mercadoria)</div>
                     <div className="text-lg font-bold tabular-nums text-slate-800">
-                      {formatarMoeda(diag.totalFaturado)}
+                      {formatarMoeda(diag.faturamento)}
                     </div>
-                    <div className="text-xs text-slate-400">{diag.qtdFaturadas} NFs</div>
+                  </div>
+                  <div className="rounded-lg bg-emerald-50 p-3">
+                    <div className="text-xs text-emerald-700">Já recebido</div>
+                    <div className="text-lg font-bold tabular-nums text-emerald-700">
+                      {formatarMoeda(diag.recebido)}
+                    </div>
+                    <div className="text-xs text-emerald-600/70">
+                      {diag.faturamento > 0 ? formatarPercent(diag.recebido / diag.faturamento) : "—"} do faturamento
+                    </div>
                   </div>
                   <div className="rounded-lg bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">Contas a receber</div>
+                    <div className="text-xs text-slate-500">A receber</div>
                     <div className="text-lg font-bold tabular-nums text-slate-800">
-                      {formatarMoeda(diag.totalContas)}
+                      {formatarMoeda(diag.aReceber)}
                     </div>
-                    <div className="text-xs text-slate-400">{diag.qtdContas} NFs</div>
                   </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">Diferença</div>
-                    <div
-                      className={`text-lg font-bold tabular-nums ${
-                        Math.abs(diag.totalFaturado - diag.totalContas) < 0.005
-                          ? "text-emerald-600"
-                          : "text-rose-600"
-                      }`}
-                    >
-                      {formatarMoeda(diag.totalFaturado - diag.totalContas)}
+                  <div className="rounded-lg bg-brand-50 p-3">
+                    <div className="text-xs text-brand-700">Prazo médio</div>
+                    <div className="text-lg font-bold tabular-nums text-brand-700">
+                      {diag.prazoMedioDias} dias
                     </div>
                   </div>
                 </div>
+
+                {/* Conciliação: financeiro vinculado × faturamento */}
+                <div className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <div className="flex items-center justify-between py-0.5">
+                    <span className="text-slate-600">Financeiro vinculado às vendas (títulos, c/ impostos)</span>
+                    <span className="tabular-nums font-medium text-slate-700">{formatarMoeda(diag.financeiroVinculado)}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-0.5">
+                    <span className="text-slate-600">Vendas à vista / sem título (recebidas no mês)</span>
+                    <span className="tabular-nums font-medium text-slate-700">{formatarMoeda(diag.aVista)}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between border-t border-slate-100 pt-1.5">
+                    <span className="font-medium text-slate-700">GAP não conciliado (faturamento − vinculado − à vista)</span>
+                    <span className={`tabular-nums font-bold ${Math.abs(diag.gap) < 0.005 ? "text-emerald-600" : "text-rose-600"}`}>
+                      {formatarMoeda(diag.gap)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Linha do tempo de recebimento */}
+                {diag.timeline.length > 0 && (
+                  <div className="rounded-lg border border-slate-200">
+                    <div className="border-b border-slate-100 px-4 py-2.5 font-medium text-slate-700">
+                      Quando o faturamento será recebido
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr className="text-left text-slate-500">
+                          <th className="px-4 py-2 font-medium">Mês</th>
+                          <th className="px-4 py-2 text-right font-medium">Recebido</th>
+                          <th className="px-4 py-2 text-right font-medium">A receber (a vencer)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {diag.timeline.map((t) => (
+                          <tr key={t.mes} className="border-t border-slate-50">
+                            <td className="px-4 py-1.5 capitalize text-slate-700">{rotuloMesAno(t.mes)}</td>
+                            <td className="px-4 py-1.5 text-right tabular-nums text-emerald-700">
+                              {t.recebido > 0.005 ? formatarMoeda(t.recebido) : "—"}
+                            </td>
+                            <td className="px-4 py-1.5 text-right tabular-nums text-slate-700">
+                              {t.aReceber > 0.005 ? formatarMoeda(t.aReceber) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 <DiagLista
                   titulo="Vendas sem conta a receber neste mês"
