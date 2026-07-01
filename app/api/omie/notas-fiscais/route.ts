@@ -44,20 +44,38 @@ export async function GET(req: NextRequest) {
     dataAte = searchParams.get("ate") ?? undefined;
   }
 
-  // Modo debug de pedido: consulta pedidos específicos por código (nIdPedido)
-  // para descobrir onde fica a "Operação" que o relatório do Omie usa.
+  // Modo debug de pedido: consulta um pedido por código, OU lista pedidos do
+  // período, para descobrir onde fica a "Operação" que o relatório do Omie usa.
   const pedidoDebug = searchParams.get("pedido");
   if (pedidoDebug) {
-    const ids = pedidoDebug.split(",").map((s) => s.trim()).filter(Boolean);
     const resultados: Record<string, unknown> = { ok: true, pedidoDebug: true };
+    if (pedidoDebug === "list") {
+      // Lista os primeiros pedidos do período (estrutura completa p/ ver a operação)
+      const p: Record<string, unknown> = { pagina: 1, registros_por_pagina: 3, apenas_importado_api: "N" };
+      if (dataDe) p.filtrar_por_data_de = dataDe;
+      if (dataAte) p.filtrar_por_data_ate = dataAte;
+      for (const [rec, met] of [
+        ["produtos/pedido/", "ListarPedidos"],
+        ["pedido/pedido_venda_produto/", "ListarPedidos"],
+      ] as [string, string][]) {
+        try {
+          resultados[`${rec}${met}`] = await callOmie(cred, rec, met, p);
+        } catch (e) {
+          resultados[`${rec}${met}_erro`] = e instanceof Error ? e.message : String(e);
+        }
+      }
+      return NextResponse.json(resultados);
+    }
+    const ids = pedidoDebug.split(",").map((s) => s.trim()).filter(Boolean);
     for (const id of ids) {
       for (const [rec, met, params] of [
+        ["produtos/pedido/", "ConsultarPedido", { codigo_pedido: Number(id) }],
         ["pedido/pedido_venda_produto/", "ConsultarPedido", { codigo_pedido: Number(id) }],
       ] as [string, string, Record<string, unknown>][]) {
         try {
-          resultados[`${id}`] = await callOmie(cred, rec, met, params);
+          resultados[`${rec}_${id}`] = await callOmie(cred, rec, met, params);
         } catch (e) {
-          resultados[`${id}_erro`] = e instanceof Error ? e.message : String(e);
+          resultados[`${rec}_${id}_erro`] = e instanceof Error ? e.message : String(e);
         }
       }
     }
