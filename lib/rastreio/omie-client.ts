@@ -757,6 +757,9 @@ function classificarOperacaoCFOP(cfop: string): string {
   if (grupo === "1" || grupo === "2" || grupo === "3") return "Entrada";
   const d2 = cfop[1]; // segundo dígito do CFOP
   const n = parseInt(cfop.slice(1, 4), 10); // três dígitos após o grupo (101, 901, 410…)
+  // 5.922 / 6.922 = simples faturamento de venda para entrega futura → é VENDA
+  // (a receita é reconhecida nessa NF; a remessa posterior não gera nova receita).
+  if (n === 922) return "Venda";
   if (d2 === "2") return "Devolução"; // 5.2xx / 6.2xx devolução
   if (d2 === "4" && n >= 410 && n <= 413) return "Devolução"; // devolução com ST
   if (d2 === "9") return "Remessa"; // 5.9xx / 6.9xx remessa
