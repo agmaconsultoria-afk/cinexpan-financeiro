@@ -19,6 +19,7 @@ import { SeletorMes } from "@/components/SeletorMes";
 import { ContaDerivada, Visao } from "@/lib/rastreio/types";
 import { useSessao } from "@/components/SessionProvider";
 import { podeEditar } from "@/lib/auth/roles";
+import { RastreioRelatorioChart } from "@/components/Charts";
 
 type Coluna = "falta" | "recebido" | "descontos" | "juros" | "atrasado";
 
@@ -405,7 +406,7 @@ export default function RastreioFaturamentoPage() {
           </button>
         </div>
 
-        <div className="card overflow-hidden">
+        <div className="mb-4 card overflow-hidden">
           <div className="border-b border-slate-200 px-5 py-4">
             <h2 className="text-lg font-bold text-brand-800">
               Relatório de Rastreamento de Faturamento
@@ -414,6 +415,21 @@ export default function RastreioFaturamentoPage() {
               Período: {periodo} · {relatorio.length} competências
             </p>
           </div>
+          {relatorio.length > 0 && (
+            <div className="px-3 py-4 sm:px-5">
+              <RastreioRelatorioChart
+                dados={relatorio.map((r) => ({
+                  rotulo: `${r.comp.slice(5, 7)}/${r.comp.slice(2, 4)}`,
+                  faturamento: r.base,
+                  rastreado: r.rastreado,
+                  percent: r.perc * 100,
+                }))}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-xs tabular-nums sm:text-sm">
               <thead>
