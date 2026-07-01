@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
       itens: resultado.itens,
       resumoPorNatOp,
       resumoPorOperacao,
+      primeiroCompl: resultado.primeiroCompl,
       // Incluído apenas quando itens = 0 — ajuda a diagnosticar estrutura real da API
       ...(resultado.primeiroRegistroBruto !== undefined ? { primeiroRegistroBruto: resultado.primeiroRegistroBruto } : {}),
     });

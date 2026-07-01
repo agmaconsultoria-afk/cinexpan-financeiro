@@ -747,10 +747,11 @@ function mapearSituacaoNF(raw: string): string {
 export async function listarNotasFiscais(
   cred: OmieCredenciais,
   opcoes: { dataDe?: string; dataAte?: string; maxPaginas?: number } = {}
-): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean; fonte: string; primeiroRegistroBruto?: unknown }> {
+): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean; fonte: string; primeiroRegistroBruto?: unknown; primeiroCompl?: Record<string, unknown> }> {
   const maxPaginas = opcoes.maxPaginas ?? 60;
   const itens: NotaFiscalItem[] = [];
   let primeiroRegistroBruto: unknown;
+  let primeiroCompl: Record<string, unknown> | undefined;
   let pagina = 1;
   let totalPaginas = 1;
   let totalNFs = 0;
@@ -934,6 +935,7 @@ export async function listarNotasFiscais(
         //   compl: cCodCateg
         const ide = (registro.ide as Record<string, unknown>) ?? {};
         const compl = (registro.compl as Record<string, unknown>) ?? {};
+        if (!primeiroCompl) primeiroCompl = compl;
         const det = (registro.det as Record<string, unknown>[]) ?? [];
         const destInt = (registro.nfDestInt as Record<string, unknown>) ?? (registro.dest as Record<string, unknown>) ?? {};
         const totalObj = (registro.total as Record<string, unknown>) ?? {};
@@ -1127,7 +1129,7 @@ export async function listarNotasFiscais(
     itens.push(...filtrados);
   }
 
-  return { itens, totalNFs, truncado, fonte, primeiroRegistroBruto: itens.length === 0 ? primeiroRegistroBruto : undefined };
+  return { itens, totalNFs, truncado, fonte, primeiroRegistroBruto: itens.length === 0 ? primeiroRegistroBruto : undefined, primeiroCompl };
 }
 
 // ===================== Contas a Receber (financas/contareceber) =====================

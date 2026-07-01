@@ -46,8 +46,10 @@ export default function FaturamentoNFPage() {
 
   const [resumoPorNatOp, setResumoPorNatOp] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorOperacao, setResumoPorOperacao] = useState<Record<string, { nfs: number; total: number }> | null>(null);
+  const [primeiroCompl, setPrimeiroCompl] = useState<Record<string, unknown> | null>(null);
   const [mostrarResumo, setMostrarResumo] = useState(false);
   const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
+  const [mostrarCompl, setMostrarCompl] = useState(false);
 
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
@@ -90,8 +92,10 @@ export default function FaturamentoNFPage() {
     setGravado(false);
     setResumoPorNatOp(null);
     setResumoPorOperacao(null);
+    setPrimeiroCompl(null);
     setMostrarResumo(false);
     setMostrarResumoOp(false);
+    setMostrarCompl(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
       const data = await res.json();
@@ -104,6 +108,7 @@ export default function FaturamentoNFPage() {
       setTotalMerc(itens.reduce((s, i) => s + i.totalMercadoria, 0));
       setResumoPorNatOp(data.resumoPorNatOp ?? null);
       setResumoPorOperacao(data.resumoPorOperacao ?? null);
+      setPrimeiroCompl(data.primeiroCompl ?? null);
       setBuscou(true);
     } catch {
       setErro("Erro de conexão. Tente novamente.");
@@ -283,6 +288,23 @@ export default function FaturamentoNFPage() {
                       ))}
                   </tbody>
                 </table>
+              )}
+            </div>
+          )}
+
+          {primeiroCompl && (
+            <div className="card mb-4 overflow-hidden">
+              <button
+                onClick={() => setMostrarCompl((v) => !v)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
+              >
+                <span className="font-medium text-slate-600">Diagnóstico: campos do bloco compl (1ª NF)</span>
+                <span className="text-xs">{mostrarCompl ? "▲ ocultar" : "▼ ver"}</span>
+              </button>
+              {mostrarCompl && (
+                <pre className="overflow-x-auto px-5 py-3 text-xs text-slate-700 bg-slate-50">
+                  {JSON.stringify(primeiroCompl, null, 2)}
+                </pre>
               )}
             </div>
           )}
