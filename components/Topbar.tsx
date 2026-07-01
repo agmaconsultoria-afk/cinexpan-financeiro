@@ -3,7 +3,7 @@
 import { Menu } from "lucide-react";
 import { useDados } from "@/lib/data-context";
 import { rotuloMes } from "@/lib/format";
-import { Database, FileSpreadsheet } from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
 
 interface TopbarProps {
   onAbrirMenu: () => void;
@@ -24,23 +24,11 @@ export function Topbar({ onAbrirMenu }: TopbarProps) {
           <Menu className="h-6 w-6" />
         </button>
 
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-            fonte === "planilha"
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-amber-50 text-amber-700"
-          }`}
-        >
-          {fonte === "planilha" ? (
-            <>
-              <FileSpreadsheet className="h-3.5 w-3.5" /> Dados da planilha
-            </>
-          ) : (
-            <>
-              <Database className="h-3.5 w-3.5" /> Dados de exemplo
-            </>
-          )}
-        </span>
+        {fonte === "planilha" && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Dados da planilha
+          </span>
+        )}
       </div>
 
       {carregado && meses.length > 0 && (

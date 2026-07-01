@@ -210,9 +210,15 @@ export function montarDemonstrativo(
     { aindaFaltaReceber: 0, jaRecebido: 0, descontos: 0, multaJuros: 0, atrasado: 0 }
   );
 
-  // Valor Total Rastreado = Falta Receber + Recebido + Descontos (abs)
-  const valorTotalRastreado =
-    totais.aindaFaltaReceber + totais.jaRecebido - totais.descontos;
+  // Valor Total Rastreado = valor faturado efetivamente rastreado da competência.
+  // Calculado direto das contas (a receber + recebido + desconto), INDEPENDENTE da
+  // visão. Na visão "Vencimento" a coluna "Falta Receber" mostra o valor cheio da
+  // nota (que já embute o recebido); somar o "Já Recebido" de novo duplicaria o
+  // total, por isso não usamos totais.aindaFaltaReceber aqui.
+  const valorTotalRastreado = doMes.reduce(
+    (a, c) => a + c.valorAReceber + c.valorRecebidoCalc + c.descontoCalc,
+    0
+  );
   const totalComPF = valorTotalRastreado + vendasPF;
   const faturamentoMes = faturamento[competencia] ?? 0;
   const percentualRastreado = faturamentoMes > 0 ? totalComPF / faturamentoMes : 0;

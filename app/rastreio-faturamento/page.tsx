@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   FileSpreadsheet,
-  Database,
   Printer,
   AlertTriangle,
   Pencil,
@@ -102,7 +101,6 @@ export default function RastreioFaturamentoPage() {
     vendasPF,
     setVendasPFMes,
     carregarDoBanco,
-    voltarParaExemplo,
   } = useRastreio();
 
   const { usuario } = useSessao();
@@ -253,32 +251,14 @@ export default function RastreioFaturamentoPage() {
         }
       />
 
-      {/* Barra de status / fonte */}
-      <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-            fonte === "banco" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-          }`}
-        >
-          {fonte === "banco" ? (
-            <>
-              <FileSpreadsheet className="h-3.5 w-3.5" /> Dados do Omie
-            </>
-          ) : (
-            <>
-              <Database className="h-3.5 w-3.5" /> Dados de exemplo
-            </>
-          )}
-        </span>
-        {fonte === "banco" && (
-          <button
-            onClick={voltarParaExemplo}
-            className="text-xs text-slate-500 underline hover:text-slate-700"
-          >
-            voltar aos dados de exemplo
-          </button>
-        )}
-      </div>
+      {/* Selo de origem (somente Omie) */}
+      {fonte === "banco" && (
+        <div className="no-print mb-4">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Dados do Omie
+          </span>
+        </div>
+      )}
 
       {aviso && (
         <div className="no-print mb-4 flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 p-3 text-sm text-brand-800">
