@@ -73,8 +73,10 @@ export interface Demonstrativo {
     multaJuros: number;
     atrasado: number;
   };
-  faturamentoMes: number;
+  faturamentoMes: number; // faturamento manual lançado (referência)
+  faturamentoOmie: number; // faturamento das NFs do Omie (gravado)
   vendasPF: number;
+  baseFaturamento: number; // denominador do % = faturamentoOmie + vendasPF
   valorTotalRastreado: number;
   totalComPF: number;
   percentualRastreado: number;

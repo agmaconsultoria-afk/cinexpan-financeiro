@@ -165,7 +165,8 @@ export function montarDemonstrativo(
   competencia: string,
   visao: Visao,
   faturamento: FaturamentoMensal,
-  vendasPF = 0
+  vendasPF = 0,
+  faturamentoOmieMap: FaturamentoMensal = {}
 ): Demonstrativo {
   const inicio = addMeses(competencia, -3);
   const meses = Array.from({ length: 12 }, (_, i) => addMeses(inicio, i));
@@ -221,7 +222,12 @@ export function montarDemonstrativo(
   );
   const totalComPF = valorTotalRastreado + vendasPF;
   const faturamentoMes = faturamento[competencia] ?? 0;
-  const percentualRastreado = faturamentoMes > 0 ? totalComPF / faturamentoMes : 0;
+  const faturamentoOmie = faturamentoOmieMap[competencia] ?? 0;
+  // Faturamento do Mês = Faturamento Omie (NFs) + Vendas PF (consumidor final).
+  // Se o Omie ainda não foi gravado, cai no faturamento manual como referência.
+  const baseFaturamento = (faturamentoOmie > 0 ? faturamentoOmie : faturamentoMes) + vendasPF;
+  // % Rastreado = (A receber + Recebido + Descontos) ÷ (Faturamento Omie + PF)
+  const percentualRastreado = baseFaturamento > 0 ? valorTotalRastreado / baseFaturamento : 0;
 
   return {
     competencia,
@@ -229,7 +235,9 @@ export function montarDemonstrativo(
     linhas,
     totais,
     faturamentoMes,
+    faturamentoOmie,
     vendasPF,
+    baseFaturamento,
     valorTotalRastreado,
     totalComPF,
     percentualRastreado,

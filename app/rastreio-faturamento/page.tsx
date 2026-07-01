@@ -9,6 +9,7 @@ import {
   Check,
   Cloud,
   X,
+  Activity,
 } from "lucide-react";
 import { useRastreio } from "@/lib/rastreio/context";
 import { montarDemonstrativo, rotuloMesAno, rotuloMesExtenso } from "@/lib/rastreio/logic";
@@ -20,6 +21,73 @@ import { useSessao } from "@/components/SessionProvider";
 import { podeEditar } from "@/lib/auth/roles";
 
 type Coluna = "falta" | "recebido" | "descontos" | "juros" | "atrasado";
+
+interface DiagNF {
+  nf: string;
+  cliente: string;
+  total: number;
+  situacao?: string;
+}
+interface DiagResultado {
+  totalFaturado: number;
+  totalContas: number;
+  qtdFaturadas: number;
+  qtdContas: number;
+  faturadaSemConta: DiagNF[];
+  contaSemFaturada: DiagNF[];
+  excluidas: { nf: string; dataEmissao: string; operacao: string; total: number }[];
+}
+
+function DiagLista({
+  titulo,
+  desc,
+  itens,
+}: {
+  titulo: string;
+  desc: string;
+  itens: { nf: string; texto: string; total: number }[];
+}) {
+  const total = itens.reduce((a, g) => a + g.total, 0);
+  return (
+    <div className="rounded-lg border border-slate-200">
+      <div className="border-b border-slate-100 px-4 py-2.5">
+        <div className="font-medium text-slate-700">
+          {titulo} <span className="text-slate-400">({itens.length})</span>
+        </div>
+        <div className="text-xs text-slate-500">{desc}</div>
+      </div>
+      {itens.length === 0 ? (
+        <div className="px-4 py-3 text-xs text-slate-400">Nenhuma divergência.</div>
+      ) : (
+        <div className="max-h-72 overflow-auto">
+          <table className="w-full text-sm">
+            <tbody>
+              {itens.slice(0, 200).map((g, i) => (
+                <tr key={`${g.nf}-${i}`} className="border-b border-slate-50 last:border-0">
+                  <td className="whitespace-nowrap px-4 py-1.5 text-slate-600">{g.nf}</td>
+                  <td className="max-w-[240px] truncate px-3 py-1.5 text-slate-500" title={g.texto}>
+                    {g.texto || "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-1.5 text-right tabular-nums text-slate-700">
+                    {formatarMoeda(g.total)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-50 font-semibold text-slate-800">
+                <td className="px-4 py-2" colSpan={2}>
+                  Total
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums">{formatarMoeda(total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const TITULO_COLUNA: Record<Coluna, string> = {
   falta: "Ainda Falta Receber",
@@ -97,7 +165,7 @@ export default function RastreioFaturamentoPage() {
     visao,
     setVisao,
     faturamento,
-    setFaturamentoMes,
+    faturamentoOmie,
     vendasPF,
     setVendasPFMes,
     carregarDoBanco,
@@ -112,6 +180,10 @@ export default function RastreioFaturamentoPage() {
   const [mesOmie, setMesOmie] = useState(() => new Date().toISOString().slice(0, 7));
   // Drill-down: célula clicada (coluna + mês; mês null = total da competência).
   const [detalhe, setDetalhe] = useState<{ col: Coluna; mes: string | null } | null>(null);
+  // Diagnóstico contas a receber x faturamento (aberto quando o gap > 5 p.p.).
+  const [diagCarregando, setDiagCarregando] = useState(false);
+  const [diag, setDiag] = useState<DiagResultado | null>(null);
+  const [diagErro, setDiagErro] = useState<string | null>(null);
 
   // Mês atual no formato YYYY-MM — para ocultar "Ainda Falta Receber" em meses passados.
   const mesAtual = new Date().toISOString().slice(0, 7);
@@ -120,9 +192,9 @@ export default function RastreioFaturamentoPage() {
   const dem = useMemo(
     () =>
       competencia
-        ? montarDemonstrativo(contas, competencia, visao, faturamento, pf)
+        ? montarDemonstrativo(contas, competencia, visao, faturamento, pf, faturamentoOmie)
         : null,
-    [contas, competencia, visao, faturamento, pf]
+    [contas, competencia, visao, faturamento, pf, faturamentoOmie]
   );
 
   // Valor de uma conta para uma coluna (respeita a visão).
@@ -188,6 +260,63 @@ export default function RastreioFaturamentoPage() {
       setAviso("Falha de conexão ao sincronizar com o Omie.");
     } finally {
       setSincronizando(false);
+    }
+  }
+
+  // Diagnóstico: cruza as NFs de venda (faturamento Omie) com as contas a receber
+  // da mesma competência, apontando divergências (venda sem financeiro no mês,
+  // financeiro sem venda no mês, e NFs fora do faturamento — remessa/devolução).
+  async function executarDiagnostico() {
+    setDiagCarregando(true);
+    setDiag(null);
+    setDiagErro(null);
+    try {
+      const res = await fetch(
+        `/api/omie/notas-fiscais?competencia=${encodeURIComponent(competencia)}`
+      );
+      const data = await res.json();
+      if (!data.ok) {
+        setDiagErro(data.erro ?? "Não foi possível carregar o faturamento do mês.");
+        return;
+      }
+      const norm = (v: unknown) => String(v ?? "").replace(/\D/g, "").replace(/^0+/, "");
+      // NFs de venda (faturamento) agregadas por número
+      const nfsFaturadas = new Map<string, DiagNF>();
+      for (const it of (data.itens ?? []) as { nf: string; clienteNome?: string; totalMercadoria?: number }[]) {
+        const nf = norm(it.nf);
+        if (!nf) continue;
+        const g = nfsFaturadas.get(nf) ?? { nf, cliente: it.clienteNome ?? "", total: 0 };
+        g.total += it.totalMercadoria ?? 0;
+        nfsFaturadas.set(nf, g);
+      }
+      // Contas a receber da competência agregadas por NF
+      const nfsContas = new Map<string, DiagNF>();
+      for (const c of contas.filter((x) => x.competencia === competencia)) {
+        const nf = norm(c.notaFiscal);
+        if (!nf) continue;
+        const g = nfsContas.get(nf) ?? { nf, cliente: c.cliente ?? "", total: 0, situacao: c.situacao };
+        g.total += c.valorConta ?? 0;
+        nfsContas.set(nf, g);
+      }
+      const faturadaSemConta = [...nfsFaturadas.values()]
+        .filter((g) => !nfsContas.has(g.nf))
+        .sort((a, b) => b.total - a.total);
+      const contaSemFaturada = [...nfsContas.values()]
+        .filter((g) => !nfsFaturadas.has(g.nf))
+        .sort((a, b) => b.total - a.total);
+      setDiag({
+        totalFaturado: [...nfsFaturadas.values()].reduce((a, g) => a + g.total, 0),
+        totalContas: [...nfsContas.values()].reduce((a, g) => a + g.total, 0),
+        qtdFaturadas: nfsFaturadas.size,
+        qtdContas: nfsContas.size,
+        faturadaSemConta,
+        contaSemFaturada,
+        excluidas: data.excluidas ?? [],
+      });
+    } catch {
+      setDiagErro("Falha de conexão ao executar o diagnóstico.");
+    } finally {
+      setDiagCarregando(false);
     }
   }
 
@@ -298,18 +427,15 @@ export default function RastreioFaturamentoPage() {
 
       {dem && (
         <>
-          {/* Título com faturamento do mês */}
+          {/* Título com o Faturamento do Mês (Omie + PF) */}
           <div className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <h2 className="text-xl font-bold text-brand-800">
               Faturamento {rotuloMesAno(competencia).replace(/^./, (s) => s.toUpperCase())}
             </h2>
-            <span className="text-xl font-bold text-brand-800">R$</span>
-            <ValorEditavel
-              valor={dem.faturamentoMes}
-              onSalvar={(n) => setFaturamentoMes(competencia, n)}
-              classe="text-xl font-bold text-brand-800"
-              somenteLeitura={!podeSincronizar}
-            />
+            <span className="text-xl font-bold text-brand-800">
+              {formatarMoeda(dem.baseFaturamento)}
+            </span>
+            <span className="text-xs font-medium text-slate-400">(Faturamento Omie + PF)</span>
           </div>
 
           {/* Cards de totais (cabeçalho do demonstrativo) */}
@@ -412,6 +538,14 @@ export default function RastreioFaturamentoPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <dt className="text-slate-600">
+                    Faturamento Omie <span className="text-xs text-slate-400">(NFs de venda)</span>
+                  </dt>
+                  <dd className="tabular-nums text-slate-700">
+                    {formatarMoeda(dem.faturamentoOmie)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt className="text-slate-600">
                     Total de vendas PF{" "}
                     <span className="text-xs text-slate-400">(consumidor final)</span>
                   </dt>
@@ -424,14 +558,18 @@ export default function RastreioFaturamentoPage() {
                   </dd>
                 </div>
                 <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                  <dt className="font-semibold text-slate-700">Total Rastreado + PF</dt>
-                  <dd className="font-bold tabular-nums">{formatarMoeda(dem.totalComPF)}</dd>
+                  <dt className="font-semibold text-slate-700">
+                    Faturamento do Mês{" "}
+                    <span className="text-xs font-normal text-slate-400">(Omie + PF)</span>
+                  </dt>
+                  <dd className="font-bold tabular-nums">{formatarMoeda(dem.baseFaturamento)}</dd>
                 </div>
               </dl>
 
               <div className="mt-6 rounded-lg bg-brand-50 p-4">
                 <div className="text-sm text-brand-800">
-                  Percentual rastreado em relação ao faturamento do mês
+                  Percentual rastreado{" "}
+                  <span className="text-xs text-brand-500">(Rastreado ÷ Faturamento do Mês)</span>
                 </div>
                 <div className="mt-1 flex items-baseline gap-3">
                   <span className="text-3xl font-bold text-brand-700">
@@ -447,6 +585,30 @@ export default function RastreioFaturamentoPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Diagnóstico — aparece quando o gap passa de 5 pontos percentuais */}
+              {dem.baseFaturamento > 0 && Math.abs(dem.percentualRastreado - 1) > 0.05 && (
+                <div className="no-print mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div className="flex items-start gap-2 text-sm text-amber-800">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      O rastreamento está a{" "}
+                      <strong>{formatarPercent(Math.abs(dem.percentualRastreado - 1))}</strong> do
+                      faturamento (gap acima de 5 p.p.). Pode haver vendas canceladas, devolvidas ou
+                      remessas emitidas em outro mês.
+                    </span>
+                  </div>
+                  <button
+                    onClick={executarDiagnostico}
+                    disabled={diagCarregando}
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+                  >
+                    <Activity className={`h-4 w-4 ${diagCarregando ? "animate-pulse" : ""}`} />
+                    {diagCarregando ? "Analisando…" : "Executar diagnóstico"}
+                  </button>
+                  {diagErro && <p className="mt-2 text-xs text-rose-600">{diagErro}</p>}
+                </div>
+              )}
             </div>
 
             <div className="card card-pad">
@@ -475,6 +637,83 @@ export default function RastreioFaturamentoPage() {
               </ul>
             </div>
           </div>
+
+          {/* Resultado do diagnóstico */}
+          {diag && (
+            <div className="mt-6 card overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <div>
+                  <h3 className="font-semibold text-slate-800">
+                    Diagnóstico — {rotuloMesAno(competencia)}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Cruzamento das NFs de venda (faturamento) com as contas a receber da competência.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDiag(null)}
+                  className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="space-y-4 p-5">
+                {/* Resumo */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">Faturamento (NFs de venda)</div>
+                    <div className="text-lg font-bold tabular-nums text-slate-800">
+                      {formatarMoeda(diag.totalFaturado)}
+                    </div>
+                    <div className="text-xs text-slate-400">{diag.qtdFaturadas} NFs</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">Contas a receber</div>
+                    <div className="text-lg font-bold tabular-nums text-slate-800">
+                      {formatarMoeda(diag.totalContas)}
+                    </div>
+                    <div className="text-xs text-slate-400">{diag.qtdContas} NFs</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">Diferença</div>
+                    <div
+                      className={`text-lg font-bold tabular-nums ${
+                        Math.abs(diag.totalFaturado - diag.totalContas) < 0.005
+                          ? "text-emerald-600"
+                          : "text-rose-600"
+                      }`}
+                    >
+                      {formatarMoeda(diag.totalFaturado - diag.totalContas)}
+                    </div>
+                  </div>
+                </div>
+
+                <DiagLista
+                  titulo="Vendas sem conta a receber neste mês"
+                  desc="NFs de venda faturadas no mês que não têm conta a receber correspondente (venda à vista/PF ou financeiro lançado em outro mês)."
+                  itens={diag.faturadaSemConta.map((g) => ({ nf: g.nf, texto: g.cliente, total: g.total }))}
+                />
+                <DiagLista
+                  titulo="Contas a receber sem venda neste mês"
+                  desc="Títulos cuja NF não aparece no faturamento do mês (NF emitida em outro mês, cancelada, devolvida ou remessa)."
+                  itens={diag.contaSemFaturada.map((g) => ({
+                    nf: g.nf,
+                    texto: [g.cliente, g.situacao].filter(Boolean).join(" · "),
+                    total: g.total,
+                  }))}
+                />
+                <DiagLista
+                  titulo="NFs fora do faturamento (Remessa / Devolução)"
+                  desc="Notas do mês que o Omie não classifica como Pedido de Venda — já excluídas do faturamento."
+                  itens={diag.excluidas.map((e) => ({
+                    nf: e.nf.replace(/^0+/, ""),
+                    texto: `${e.operacao} · ${e.dataEmissao}`,
+                    total: e.total,
+                  }))}
+                />
+              </div>
+            </div>
+          )}
         </>
       )}
 
