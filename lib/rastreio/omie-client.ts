@@ -768,9 +768,10 @@ function classificarOperacaoCFOP(cfop: string): string {
 export async function listarNotasFiscais(
   cred: OmieCredenciais,
   opcoes: { dataDe?: string; dataAte?: string; maxPaginas?: number } = {}
-): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean; fonte: string; primeiroRegistroBruto?: unknown; primeiroCompl?: Record<string, unknown> }> {
+): Promise<{ itens: NotaFiscalItem[]; totalNFs: number; truncado: boolean; fonte: string; primeiroRegistroBruto?: unknown; primeiroCompl?: Record<string, unknown>; excluidas?: { nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] }> {
   const maxPaginas = opcoes.maxPaginas ?? 60;
   const itens: NotaFiscalItem[] = [];
+  const excluidas: { nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] = [];
   let primeiroRegistroBruto: unknown;
   let primeiroCompl: Record<string, unknown> | undefined;
   let pagina = 1;
@@ -1001,7 +1002,19 @@ export async function listarNotasFiscais(
           const operacaoNF = temVenda
             ? "Venda"
             : opsItens.find((o) => o === "Remessa" || o === "Devolução") ?? opsItens[0] ?? "Outros";
-          if (operacaoNF === "Remessa" || operacaoNF === "Devolução") continue;
+          if (operacaoNF === "Remessa" || operacaoNF === "Devolução") {
+            // Diagnóstico: registra a NF excluída com seus CFOPs e valor total
+            const cfopsNF = Array.from(new Set(det.map((item) => {
+              const prod = (item.prod as Record<string, unknown>) ?? {};
+              return ((pega(prod, "CFOP", "cfop") ?? "").toString()).replace(/\./g, "");
+            }).filter(Boolean))).join(", ");
+            const totalNF = det.reduce((s, item) => {
+              const prod = (item.prod as Record<string, unknown>) ?? {};
+              return s + num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0);
+            }, 0);
+            excluidas.push({ nf: nfNum, dataEmissao, operacao: operacaoNF, cfops: cfopsNF, total: totalNF });
+            continue;
+          }
           for (const item of det) {
             const prod = (item.prod as Record<string, unknown>) ?? {};
             // CFOP vem como "5.101" — normaliza removendo o ponto
@@ -1155,7 +1168,20 @@ export async function listarNotasFiscais(
     itens.push(...filtrados);
   }
 
-  return { itens, totalNFs, truncado, fonte, primeiroRegistroBruto: itens.length === 0 ? primeiroRegistroBruto : undefined, primeiroCompl };
+  // Pós-filtro por data também nas NFs excluídas (diagnóstico só do período pedido)
+  let excluidasFiltradas = excluidas;
+  if (fonte === "nfconsultar" && (opcoes.dataDe || opcoes.dataAte)) {
+    const deIso = brParaIso(opcoes.dataDe);
+    const ateIso = brParaIso(opcoes.dataAte);
+    excluidasFiltradas = excluidas.filter((e) => {
+      if (!e.dataEmissao) return true;
+      if (deIso && e.dataEmissao < deIso) return false;
+      if (ateIso && e.dataEmissao > ateIso) return false;
+      return true;
+    });
+  }
+
+  return { itens, totalNFs, truncado, fonte, primeiroRegistroBruto: itens.length === 0 ? primeiroRegistroBruto : undefined, primeiroCompl, excluidas: excluidasFiltradas };
 }
 
 // ===================== Contas a Receber (financas/contareceber) =====================

@@ -47,9 +47,11 @@ export default function FaturamentoNFPage() {
   const [resumoPorNatOp, setResumoPorNatOp] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorOperacao, setResumoPorOperacao] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorCFOP, setResumoPorCFOP] = useState<Record<string, { nfs: number; total: number }> | null>(null);
+  const [excluidas, setExcluidas] = useState<{ nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] | null>(null);
   const [mostrarResumo, setMostrarResumo] = useState(false);
   const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
   const [mostrarCFOP, setMostrarCFOP] = useState(false);
+  const [mostrarExcluidas, setMostrarExcluidas] = useState(false);
 
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
@@ -93,9 +95,11 @@ export default function FaturamentoNFPage() {
     setResumoPorNatOp(null);
     setResumoPorOperacao(null);
     setResumoPorCFOP(null);
+    setExcluidas(null);
     setMostrarResumo(false);
     setMostrarResumoOp(false);
     setMostrarCFOP(false);
+    setMostrarExcluidas(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
       const data = await res.json();
@@ -109,6 +113,7 @@ export default function FaturamentoNFPage() {
       setResumoPorNatOp(data.resumoPorNatOp ?? null);
       setResumoPorOperacao(data.resumoPorOperacao ?? null);
       setResumoPorCFOP(data.resumoPorCFOP ?? null);
+      setExcluidas(data.excluidas ?? null);
       setBuscou(true);
     } catch {
       setErro("Erro de conexão. Tente novamente.");
@@ -320,6 +325,51 @@ export default function FaturamentoNFPage() {
                           <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
                           <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
                             {formatarMoeda(v.total)}
+                          </td>
+                          <td className="w-full" />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {excluidas && excluidas.length > 0 && (
+            <div className="card mb-4 overflow-hidden">
+              <button
+                onClick={() => setMostrarExcluidas((v) => !v)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
+              >
+                <span className="font-medium text-slate-600">
+                  NFs excluídas do faturamento ({excluidas.length}) — Remessa / Devolução
+                </span>
+                <span className="text-xs">{mostrarExcluidas ? "▲ ocultar" : "▼ ver"}</span>
+              </button>
+              {mostrarExcluidas && (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-y border-slate-200 text-left text-slate-500">
+                      <th className="px-5 py-2 font-medium">NF</th>
+                      <th className="px-3 py-2 font-medium">Emissão</th>
+                      <th className="px-3 py-2 font-medium">Operação</th>
+                      <th className="px-3 py-2 font-medium">CFOPs</th>
+                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
+                      <th className="w-full" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {excluidas
+                      .slice()
+                      .sort((a, b) => b.total - a.total)
+                      .map((e) => (
+                        <tr key={e.nf} className="border-b border-slate-100 last:border-0">
+                          <td className="px-5 py-2 text-slate-700">{e.nf.replace(/^0+/, "")}</td>
+                          <td className="px-3 py-2 text-slate-500">{e.dataEmissao}</td>
+                          <td className="px-3 py-2 text-slate-500">{e.operacao}</td>
+                          <td className="px-3 py-2 text-slate-500">{e.cfops}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
+                            {formatarMoeda(e.total)}
                           </td>
                           <td className="w-full" />
                         </tr>
