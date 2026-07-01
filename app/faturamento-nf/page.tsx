@@ -265,7 +265,7 @@ export default function FaturamentoNFPage() {
                 onClick={() => setMostrarResumoOp((v) => !v)}
                 className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
               >
-                <span className="font-medium text-slate-600">Composição por operação (derivada do CFOP)</span>
+                <span className="font-medium text-slate-600">Composição por operação</span>
                 <span className="text-xs">{mostrarResumoOp ? "▲ ocultar" : "▼ ver"}</span>
               </button>
               {mostrarResumoOp && (
@@ -342,7 +342,7 @@ export default function FaturamentoNFPage() {
                 className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
               >
                 <span className="font-medium text-slate-600">
-                  NFs excluídas do faturamento ({excluidas.length}) — Remessa / Devolução
+                  NFs excluídas do faturamento ({excluidas.length}) — sem pedido de venda
                 </span>
                 <span className="text-xs">{mostrarExcluidas ? "▲ ocultar" : "▼ ver"}</span>
               </button>
