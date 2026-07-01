@@ -44,6 +44,26 @@ export async function GET(req: NextRequest) {
     dataAte = searchParams.get("ate") ?? undefined;
   }
 
+  // Modo debug de pedido: consulta pedidos específicos por código (nIdPedido)
+  // para descobrir onde fica a "Operação" que o relatório do Omie usa.
+  const pedidoDebug = searchParams.get("pedido");
+  if (pedidoDebug) {
+    const ids = pedidoDebug.split(",").map((s) => s.trim()).filter(Boolean);
+    const resultados: Record<string, unknown> = { ok: true, pedidoDebug: true };
+    for (const id of ids) {
+      for (const [rec, met, params] of [
+        ["pedido/pedido_venda_produto/", "ConsultarPedido", { codigo_pedido: Number(id) }],
+      ] as [string, string, Record<string, unknown>][]) {
+        try {
+          resultados[`${id}`] = await callOmie(cred, rec, met, params);
+        } catch (e) {
+          resultados[`${id}_erro`] = e instanceof Error ? e.message : String(e);
+        }
+      }
+    }
+    return NextResponse.json(resultados);
+  }
+
   // Modo debug: amostra bruta dos endpoints de NF para diagnóstico.
   if (searchParams.get("debug") === "1") {
     const resultados: Record<string, unknown> = { ok: true, debug: true };
