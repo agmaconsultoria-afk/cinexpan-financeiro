@@ -866,10 +866,51 @@ export async function listarNotasFiscais(
     }
   }
 
+  // OTIMIZAÇÃO: quando o nfconsultar já foi confirmado pela busca binária, buscamos
+  // as páginas do mês em LOTES CONCORRENTES (várias ao mesmo tempo) em vez de uma a
+  // uma. As respostas com cDetalhesPedido são pesadas; paralelizar reduz muito o
+  // tempo total. Paramos o pré-carregamento assim que uma página passa de dataAte.
+  let bufferPaginas: Record<string, unknown>[][] | null = null;
+  let bufIdx = 0;
+  if (fonteConfirmada && fonte === "nfconsultar") {
+    bufferPaginas = [];
+    const ateIso = brParaIso(opcoes.dataAte);
+    const CONC = 4; // páginas simultâneas (equilíbrio velocidade x limite do Omie)
+    let p = pagina;
+    let parar = false;
+    while (!parar && p <= totalPaginas && bufferPaginas.length < maxPaginas) {
+      const lote: number[] = [];
+      for (let k = 0; k < CONC && p + k <= totalPaginas; k++) lote.push(p + k);
+      const respostas = await Promise.all(
+        lote.map((pg) =>
+          callOmie<Record<string, unknown>>(cred, "produtos/nfconsultar/", "ListarNF", buildParamNF(pg))
+            .then((r) => extrairNFResp(r).lista)
+            .catch(() => [] as Record<string, unknown>[])
+        )
+      );
+      for (const l of respostas) {
+        bufferPaginas.push(l);
+        // Early stop: se a NF mais antiga da página já é posterior a dataAte,
+        // as próximas páginas são ainda mais novas — nada mais a carregar.
+        if (ateIso && l.length > 0) {
+          const ide0 = (l[0]?.ide as Record<string, unknown>) ?? {};
+          const dataAntiga = dataIso(ide0.dEmi);
+          if (dataAntiga && dataAntiga > ateIso) { parar = true; break; }
+        }
+      }
+      p += CONC;
+      if (!parar && p <= totalPaginas) await sleep(50);
+    }
+  }
+
   do {
     let lista: Record<string, unknown>[] = [];
 
-    if (!fonteConfirmada) {
+    if (bufferPaginas) {
+      // Consome as páginas já pré-carregadas (busca concorrente acima).
+      lista = bufferPaginas[bufIdx] ?? [];
+      bufIdx++;
+    } else if (!fonteConfirmada) {
       // Tenta nfconsultar primeiro (endpoint de consulta de NF)
       try {
         const r = await callOmie<Record<string, unknown>>(
@@ -1151,6 +1192,12 @@ export async function listarNotasFiscais(
 
     paginasProcessadas++;
 
+    // Modo buffer (nfconsultar concorrente): apenas avança no buffer já carregado.
+    if (bufferPaginas) {
+      if (bufIdx >= bufferPaginas.length || paginasProcessadas >= maxPaginas) break;
+      continue;
+    }
+
     // Early stop: quando a NF mais antiga desta página já é posterior a dataAte,
     // todas as páginas seguintes serão ainda mais novas — nada mais a encontrar.
     if (fonte === "nfconsultar" && fonteConfirmada && opcoes.dataAte) {
@@ -1170,7 +1217,7 @@ export async function listarNotasFiscais(
     if (pagina > totalPaginas) break;
     // nfconsultar: sleep curto entre páginas (busca binária já localizou o mês)
     await sleep(fonte === "nfconsultar" ? 40 : 200);
-  } while (pagina <= totalPaginas);
+  } while (bufferPaginas ? bufIdx < bufferPaginas.length : pagina <= totalPaginas);
 
   // Pós-filtro por data de emissão — garante que, mesmo quando o filtro da API
   // é ignorado, só chegam ao cliente os itens do período solicitado.
