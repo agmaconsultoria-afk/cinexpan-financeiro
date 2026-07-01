@@ -744,6 +744,27 @@ function mapearSituacaoNF(raw: string): string {
   return raw || "—";
 }
 
+/**
+ * Classifica a "Operação" da NF (à moda do relatório do Omie) a partir do CFOP.
+ * O endpoint nfconsultar NÃO devolve o campo de operação do Omie (só cCodCateg,
+ * que é a categoria financeira). O CFOP é a fonte fiscal canônica de onde o
+ * próprio Omie deriva Venda / Remessa / Devolução.
+ * `cfop` deve vir sem ponto (ex.: "5101", "5901", "5202").
+ */
+function classificarOperacaoCFOP(cfop: string): string {
+  if (!cfop || cfop.length < 4) return "Sem CFOP";
+  const grupo = cfop[0]; // 1/2/3 = entrada, 5/6/7 = saída
+  if (grupo === "1" || grupo === "2" || grupo === "3") return "Entrada";
+  const d2 = cfop[1]; // segundo dígito do CFOP
+  const n = parseInt(cfop.slice(1, 4), 10); // três dígitos após o grupo (101, 901, 410…)
+  if (d2 === "2") return "Devolução"; // 5.2xx / 6.2xx devolução
+  if (d2 === "4" && n >= 410 && n <= 413) return "Devolução"; // devolução com ST
+  if (d2 === "9") return "Remessa"; // 5.9xx / 6.9xx remessa
+  if (d2 === "5" || d2 === "6") return "Remessa"; // remessa p/ exportação, crédito ICMS ST
+  if (d2 === "1" || d2 === "3" || d2 === "4") return "Venda"; // venda de mercadoria/serviço/ST
+  return "Outros";
+}
+
 export async function listarNotasFiscais(
   cred: OmieCredenciais,
   opcoes: { dataDe?: string; dataAte?: string; maxPaginas?: number } = {}
@@ -962,14 +983,7 @@ export async function listarNotasFiscais(
         // Canceladas e denegadas não entram no faturamento
         if (situacao !== "Autorizado") continue;
 
-        const operacao = (compl.cOperacao ?? compl.cCodCateg ?? "").toString();
         const natOp = (ide.natOp ?? "").toString();
-        // Filtra Remessa e Devolução pelo campo cOperacao (Omie interno) e pelo natOp (NF-e)
-        const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-        const opN = norm(operacao);
-        const natN = norm(natOp);
-        if (opN.includes("REMESSA") || natN.includes("REMESSA") ||
-            opN.includes("DEVOLUCAO") || natN.includes("DEVOLUCAO")) continue;
         const clienteNome = (pega(destInt, "cRazao", "xNome") ?? "").toString();
         const clienteDoc = (pega(destInt, "cnpj_cpf", "CNPJ", "CPF") ?? "").toString();
 
@@ -978,9 +992,13 @@ export async function listarNotasFiscais(
             const prod = (item.prod as Record<string, unknown>) ?? {};
             // CFOP vem como "5.101" — normaliza removendo o ponto
             const cfopRaw = (pega(prod, "CFOP", "cfop") ?? "").toString();
-            const cfop = cfopRaw.replace(".", "");
+            const cfop = cfopRaw.replace(/\./g, "");
             // 1.xxx / 2.xxx = entrada (devolução, retorno) — exclui do faturamento de saída
             if (cfop && /^[12]/.test(cfop)) continue;
+            // A "Operação" do Omie (Pedido de Venda / Remessa / Devolução) é derivada
+            // do CFOP. Remessa e Devolução não são venda — ficam fora do faturamento.
+            const operacaoItem = classificarOperacaoCFOP(cfop);
+            if (operacaoItem === "Remessa" || operacaoItem === "Devolução") continue;
             itens.push({
               dataEmissao, nf: nfNum, serie,
               clienteNome: clienteNome || clienteDoc, clienteDoc,
@@ -990,7 +1008,7 @@ export async function listarNotasFiscais(
               valorUnitario: num(pega(prod, "vUnCom") ?? 0),
               // nCMCTotal é CMC (custo), vProd é o valor real do produto
               totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
-              operacao, natOp, finNFe, situacao, tags: "", cfop,
+              operacao: operacaoItem, natOp, finNFe, situacao, tags: "", cfop,
             });
           }
         } else {
@@ -1001,7 +1019,7 @@ export async function listarNotasFiscais(
             clienteNome: clienteNome || clienteDoc, clienteDoc,
             produto: "", quantidade: 1, unidade: "", valorUnitario: valorNF,
             totalMercadoria: valorNF,
-            operacao, natOp, finNFe, situacao, tags: "", cfop: "",
+            operacao: "Sem itens", natOp, finNFe, situacao, tags: "", cfop: "",
           });
         }
       } else if (fonte === "nf") {

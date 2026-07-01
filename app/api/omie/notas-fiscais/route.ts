@@ -65,9 +65,11 @@ export async function GET(req: NextRequest) {
   try {
     const resultado = await listarNotasFiscais(cred, { dataDe, dataAte });
 
-    // Resumo por natureza da operação (ide.natOp) e por operação Omie (compl.cOperacao)
+    // Resumo por natureza da operação (ide.natOp), por operação derivada do CFOP
+    // (Venda/Remessa/Devolução) e por CFOP — ajuda a validar contra o relatório Omie.
     const resumoPorNatOp: Record<string, { nfs: number; total: number }> = {};
     const resumoPorOperacao: Record<string, { nfs: number; total: number }> = {};
+    const resumoPorCFOP: Record<string, { nfs: number; total: number }> = {};
     for (const item of resultado.itens) {
       const chaveNat = item.natOp || "(sem natureza)";
       if (!resumoPorNatOp[chaveNat]) resumoPorNatOp[chaveNat] = { nfs: 0, total: 0 };
@@ -78,6 +80,11 @@ export async function GET(req: NextRequest) {
       if (!resumoPorOperacao[chaveOp]) resumoPorOperacao[chaveOp] = { nfs: 0, total: 0 };
       resumoPorOperacao[chaveOp].nfs++;
       resumoPorOperacao[chaveOp].total += item.totalMercadoria;
+
+      const chaveCfop = item.cfop || "(sem CFOP)";
+      if (!resumoPorCFOP[chaveCfop]) resumoPorCFOP[chaveCfop] = { nfs: 0, total: 0 };
+      resumoPorCFOP[chaveCfop].nfs++;
+      resumoPorCFOP[chaveCfop].total += item.totalMercadoria;
     }
 
     return NextResponse.json({
@@ -88,6 +95,7 @@ export async function GET(req: NextRequest) {
       itens: resultado.itens,
       resumoPorNatOp,
       resumoPorOperacao,
+      resumoPorCFOP,
       primeiroCompl: resultado.primeiroCompl,
       // Incluído apenas quando itens = 0 — ajuda a diagnosticar estrutura real da API
       ...(resultado.primeiroRegistroBruto !== undefined ? { primeiroRegistroBruto: resultado.primeiroRegistroBruto } : {}),

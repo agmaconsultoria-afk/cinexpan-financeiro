@@ -46,10 +46,10 @@ export default function FaturamentoNFPage() {
 
   const [resumoPorNatOp, setResumoPorNatOp] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorOperacao, setResumoPorOperacao] = useState<Record<string, { nfs: number; total: number }> | null>(null);
-  const [primeiroCompl, setPrimeiroCompl] = useState<Record<string, unknown> | null>(null);
+  const [resumoPorCFOP, setResumoPorCFOP] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [mostrarResumo, setMostrarResumo] = useState(false);
   const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
-  const [mostrarCompl, setMostrarCompl] = useState(false);
+  const [mostrarCFOP, setMostrarCFOP] = useState(false);
 
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
@@ -92,10 +92,10 @@ export default function FaturamentoNFPage() {
     setGravado(false);
     setResumoPorNatOp(null);
     setResumoPorOperacao(null);
-    setPrimeiroCompl(null);
+    setResumoPorCFOP(null);
     setMostrarResumo(false);
     setMostrarResumoOp(false);
-    setMostrarCompl(false);
+    setMostrarCFOP(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
       const data = await res.json();
@@ -108,7 +108,7 @@ export default function FaturamentoNFPage() {
       setTotalMerc(itens.reduce((s, i) => s + i.totalMercadoria, 0));
       setResumoPorNatOp(data.resumoPorNatOp ?? null);
       setResumoPorOperacao(data.resumoPorOperacao ?? null);
-      setPrimeiroCompl(data.primeiroCompl ?? null);
+      setResumoPorCFOP(data.resumoPorCFOP ?? null);
       setBuscou(true);
     } catch {
       setErro("Erro de conexão. Tente novamente.");
@@ -260,7 +260,7 @@ export default function FaturamentoNFPage() {
                 onClick={() => setMostrarResumoOp((v) => !v)}
                 className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
               >
-                <span className="font-medium text-slate-600">Composição por operação Omie (cOperacao)</span>
+                <span className="font-medium text-slate-600">Composição por operação (derivada do CFOP)</span>
                 <span className="text-xs">{mostrarResumoOp ? "▲ ocultar" : "▼ ver"}</span>
               </button>
               {mostrarResumoOp && (
@@ -292,19 +292,40 @@ export default function FaturamentoNFPage() {
             </div>
           )}
 
-          {primeiroCompl && (
+          {resumoPorCFOP && Object.keys(resumoPorCFOP).length > 0 && (
             <div className="card mb-4 overflow-hidden">
               <button
-                onClick={() => setMostrarCompl((v) => !v)}
+                onClick={() => setMostrarCFOP((v) => !v)}
                 className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
               >
-                <span className="font-medium text-slate-600">Diagnóstico: campos do bloco compl (1ª NF)</span>
-                <span className="text-xs">{mostrarCompl ? "▲ ocultar" : "▼ ver"}</span>
+                <span className="font-medium text-slate-600">Composição por CFOP</span>
+                <span className="text-xs">{mostrarCFOP ? "▲ ocultar" : "▼ ver"}</span>
               </button>
-              {mostrarCompl && (
-                <pre className="overflow-x-auto px-5 py-3 text-xs text-slate-700 bg-slate-50">
-                  {JSON.stringify(primeiroCompl, null, 2)}
-                </pre>
+              {mostrarCFOP && (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-y border-slate-200 text-left text-slate-500">
+                      <th className="px-5 py-2 font-medium">CFOP</th>
+                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
+                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
+                      <th className="w-full" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(resumoPorCFOP)
+                      .sort((a, b) => b[1].total - a[1].total)
+                      .map(([cfop, v]) => (
+                        <tr key={cfop} className="border-b border-slate-100 last:border-0">
+                          <td className="px-5 py-2 text-slate-700">{cfop}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
+                            {formatarMoeda(v.total)}
+                          </td>
+                          <td className="w-full" />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
               )}
             </div>
           )}
