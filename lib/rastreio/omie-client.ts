@@ -960,11 +960,14 @@ export async function listarNotasFiscais(
         // Canceladas e denegadas não entram no faturamento
         if (situacao !== "Autorizado") continue;
 
-        const operacao = (compl.cCodCateg ?? "").toString();
+        const operacao = (compl.cOperacao ?? compl.cCodCateg ?? "").toString();
         const natOp = (ide.natOp ?? "").toString();
-        // Remessa e Devolução de Venda não são receita de venda — excluir
-        const natOpN = natOp.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
-        if (natOpN.includes("REMESSA") || natOpN.includes("DEVOLUCAO")) continue;
+        // Filtra Remessa e Devolução pelo campo cOperacao (Omie interno) e pelo natOp (NF-e)
+        const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+        const opN = norm(operacao);
+        const natN = norm(natOp);
+        if (opN.includes("REMESSA") || natN.includes("REMESSA") ||
+            opN.includes("DEVOLUCAO") || natN.includes("DEVOLUCAO")) continue;
         const clienteNome = (pega(destInt, "cRazao", "xNome") ?? "").toString();
         const clienteDoc = (pega(destInt, "cnpj_cpf", "CNPJ", "CPF") ?? "").toString();
 

@@ -65,13 +65,19 @@ export async function GET(req: NextRequest) {
   try {
     const resultado = await listarNotasFiscais(cred, { dataDe, dataAte });
 
-    // Resumo por natureza da operação — ajuda a identificar NFs não-venda incluídas
+    // Resumo por natureza da operação (ide.natOp) e por operação Omie (compl.cOperacao)
     const resumoPorNatOp: Record<string, { nfs: number; total: number }> = {};
+    const resumoPorOperacao: Record<string, { nfs: number; total: number }> = {};
     for (const item of resultado.itens) {
-      const chave = item.natOp || "(sem natureza)";
-      if (!resumoPorNatOp[chave]) resumoPorNatOp[chave] = { nfs: 0, total: 0 };
-      resumoPorNatOp[chave].nfs++;
-      resumoPorNatOp[chave].total += item.totalMercadoria;
+      const chaveNat = item.natOp || "(sem natureza)";
+      if (!resumoPorNatOp[chaveNat]) resumoPorNatOp[chaveNat] = { nfs: 0, total: 0 };
+      resumoPorNatOp[chaveNat].nfs++;
+      resumoPorNatOp[chaveNat].total += item.totalMercadoria;
+
+      const chaveOp = item.operacao || "(sem operação)";
+      if (!resumoPorOperacao[chaveOp]) resumoPorOperacao[chaveOp] = { nfs: 0, total: 0 };
+      resumoPorOperacao[chaveOp].nfs++;
+      resumoPorOperacao[chaveOp].total += item.totalMercadoria;
     }
 
     return NextResponse.json({
@@ -81,6 +87,7 @@ export async function GET(req: NextRequest) {
       truncado: resultado.truncado,
       itens: resultado.itens,
       resumoPorNatOp,
+      resumoPorOperacao,
       // Incluído apenas quando itens = 0 — ajuda a diagnosticar estrutura real da API
       ...(resultado.primeiroRegistroBruto !== undefined ? { primeiroRegistroBruto: resultado.primeiroRegistroBruto } : {}),
     });
