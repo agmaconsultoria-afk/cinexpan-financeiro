@@ -857,8 +857,10 @@ export async function listarNotasFiscais(
           } catch { low = mid + 1; }
           // sem sleep entre passos — busca binária é rápida e não gera paginação pesada
         }
-        // Recua 1 página para cobrir NFs de fronteira que podem ter datas fora de ordem
-        pagina = Math.max(1, low - 1);
+        // Recua algumas páginas: as NFs não vêm em ordem perfeita de data (emissão
+        // fora de ordem, entrega futura), então damos margem para não perder o começo
+        // do mês. O pós-filtro por data remove o que vier de fora do período.
+        pagina = Math.max(1, low - 5);
       }
       // paginaStep = 1 (padrão) → avança para frente a partir de pagina
     } catch {
@@ -878,6 +880,7 @@ export async function listarNotasFiscais(
     const CONC = 4; // páginas simultâneas (equilíbrio velocidade x limite do Omie)
     let p = pagina;
     let parar = false;
+    let pgsAlemDoFim = 0; // páginas consecutivas totalmente após dataAte
     while (!parar && p <= totalPaginas && bufferPaginas.length < maxPaginas) {
       const lote: number[] = [];
       for (let k = 0; k < CONC && p + k <= totalPaginas; k++) lote.push(p + k);
@@ -890,12 +893,22 @@ export async function listarNotasFiscais(
       );
       for (const l of respostas) {
         bufferPaginas.push(l);
-        // Early stop: se a NF mais antiga da página já é posterior a dataAte,
-        // as próximas páginas são ainda mais novas — nada mais a carregar.
+        // Early stop robusto: só paramos quando a MENOR data da página já passou de
+        // dataAte (página inteira fora do período) por 2 páginas seguidas — assim
+        // uma NF fora de ordem não interrompe a leitura no meio do mês.
         if (ateIso && l.length > 0) {
-          const ide0 = (l[0]?.ide as Record<string, unknown>) ?? {};
-          const dataAntiga = dataIso(ide0.dEmi);
-          if (dataAntiga && dataAntiga > ateIso) { parar = true; break; }
+          let menor: string | null = null;
+          for (const reg of l) {
+            const ide = (reg.ide as Record<string, unknown>) ?? {};
+            const d = dataIso(ide.dEmi);
+            if (d && (!menor || d < menor)) menor = d;
+          }
+          if (menor && menor > ateIso) {
+            pgsAlemDoFim++;
+            if (pgsAlemDoFim >= 2) { parar = true; break; }
+          } else {
+            pgsAlemDoFim = 0;
+          }
         }
       }
       p += CONC;
