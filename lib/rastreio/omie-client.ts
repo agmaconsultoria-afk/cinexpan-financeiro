@@ -989,8 +989,8 @@ export async function listarNotasFiscais(
         const rotuloOp: Record<string, string> = { "11": "Pedido de Venda", "14": "Remessa de Produto" };
         const operacaoNF = rotuloOp[opPedido] ?? (opPedido ? `Operação ${opPedido}` : "(sem pedido)");
 
-        // Remessa (opPedido 14) não é faturamento de venda — fica de fora.
-        if (opPedido === "14") {
+        // Registra a NF na lista de excluídas (diagnóstico) e pula.
+        const registrarExcluida = (motivo: string) => {
           if (det.length > 0) {
             const cfopsNF = Array.from(new Set(det.map((item) => {
               const prod = (item.prod as Record<string, unknown>) ?? {};
@@ -1000,8 +1000,20 @@ export async function listarNotasFiscais(
               const prod = (item.prod as Record<string, unknown>) ?? {};
               return s + num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0);
             }, 0);
-            excluidas.push({ nf: nfNum, dataEmissao, operacao: operacaoNF, cfops: cfopsNF, total: totalNF });
+            excluidas.push({ nf: nfNum, dataEmissao, operacao: motivo, cfops: cfopsNF, total: totalNF });
           }
+        };
+
+        // Remessa (opPedido 14) não é faturamento de venda — fica de fora.
+        if (opPedido === "14") {
+          registrarExcluida(operacaoNF);
+          continue;
+        }
+
+        // Notas com devolução (total ou parcial) não entram no faturamento —
+        // o relatório do Omie as separa como "Devolução de Venda".
+        if (devolvido === "S" || devParcial === "S") {
+          registrarExcluida(devParcial === "S" ? "Devolução parcial" : "Devolvido (total)");
           continue;
         }
 
