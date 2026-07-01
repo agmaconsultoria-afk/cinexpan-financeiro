@@ -988,17 +988,25 @@ export async function listarNotasFiscais(
         const clienteDoc = (pega(destInt, "cnpj_cpf", "CNPJ", "CPF") ?? "").toString();
 
         if (det.length > 0) {
+          // A "Operação" no Omie é do cabeçalho da NF (uma por NF), derivada do CFOP.
+          // Classificamos a NF inteira: se tiver ao menos um item de venda, é "Venda"
+          // (Pedido de Venda) e conta o total cheio — inclusive linhas acessórias como
+          // faturamento para entrega futura (5.922). NFs 100% Remessa/Devolução ficam fora.
+          const opsItens = det.map((item) => {
+            const prod = (item.prod as Record<string, unknown>) ?? {};
+            const cfop = ((pega(prod, "CFOP", "cfop") ?? "").toString()).replace(/\./g, "");
+            return classificarOperacaoCFOP(cfop);
+          });
+          const temVenda = opsItens.some((o) => o === "Venda");
+          const operacaoNF = temVenda
+            ? "Venda"
+            : opsItens.find((o) => o === "Remessa" || o === "Devolução") ?? opsItens[0] ?? "Outros";
+          if (operacaoNF === "Remessa" || operacaoNF === "Devolução") continue;
           for (const item of det) {
             const prod = (item.prod as Record<string, unknown>) ?? {};
             // CFOP vem como "5.101" — normaliza removendo o ponto
             const cfopRaw = (pega(prod, "CFOP", "cfop") ?? "").toString();
             const cfop = cfopRaw.replace(/\./g, "");
-            // 1.xxx / 2.xxx = entrada (devolução, retorno) — exclui do faturamento de saída
-            if (cfop && /^[12]/.test(cfop)) continue;
-            // A "Operação" do Omie (Pedido de Venda / Remessa / Devolução) é derivada
-            // do CFOP. Remessa e Devolução não são venda — ficam fora do faturamento.
-            const operacaoItem = classificarOperacaoCFOP(cfop);
-            if (operacaoItem === "Remessa" || operacaoItem === "Devolução") continue;
             itens.push({
               dataEmissao, nf: nfNum, serie,
               clienteNome: clienteNome || clienteDoc, clienteDoc,
@@ -1008,7 +1016,7 @@ export async function listarNotasFiscais(
               valorUnitario: num(pega(prod, "vUnCom") ?? 0),
               // nCMCTotal é CMC (custo), vProd é o valor real do produto
               totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
-              operacao: operacaoItem, natOp, finNFe, situacao, tags: "", cfop,
+              operacao: operacaoNF, natOp, finNFe, situacao, tags: "", cfop,
             });
           }
         } else {
