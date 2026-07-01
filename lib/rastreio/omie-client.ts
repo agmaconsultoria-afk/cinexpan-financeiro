@@ -733,6 +733,8 @@ export interface NotaFiscalItem {
   tags: string;
   cfop: string;
   categoria?: string; // compl.cCodCateg (categoria financeira do Omie)
+  nIdPedido?: number; // compl.nIdPedido (pedido de venda de origem, 0 se não houver)
+  nIdReceb?: number; // compl.nIdReceb (recebimento de origem, ≠ 0 em entradas/devoluções)
   vencimento?: string;
 }
 
@@ -972,6 +974,8 @@ export async function listarNotasFiscais(
         // (compl.cCodCateg) + finNFe para descobrir qual campo separa o "Pedido de
         // Venda" do relatório do Omie das remessas/complementares que não entram.
         const categoria = (compl.cCodCateg ?? "").toString();
+        const nIdPedido = num(compl.nIdPedido);
+        const nIdReceb = num(compl.nIdReceb);
 
         if (det.length > 0) {
           for (const item of det) {
@@ -988,7 +992,7 @@ export async function listarNotasFiscais(
               valorUnitario: num(pega(prod, "vUnCom") ?? 0),
               // nCMCTotal é CMC (custo), vProd é o valor real do produto
               totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
-              operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop, categoria,
+              operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop, categoria, nIdPedido, nIdReceb,
             });
           }
         } else {
@@ -999,7 +1003,7 @@ export async function listarNotasFiscais(
             clienteNome: clienteNome || clienteDoc, clienteDoc,
             produto: "", quantidade: 1, unidade: "", valorUnitario: valorNF,
             totalMercadoria: valorNF,
-            operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop: "", categoria,
+            operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop: "", categoria, nIdPedido, nIdReceb,
           });
         }
       } else if (fonte === "nf") {

@@ -52,7 +52,7 @@ export default function FaturamentoNFPage() {
   const [excluidas, setExcluidas] = useState<{ nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] | null>(null);
   const [detalhe196, setDetalhe196] = useState<{ nf: string; cfops: string; cliente: string; produto: string; total: number }[] | null>(null);
   const [mostrarDetalhe196, setMostrarDetalhe196] = useState(false);
-  const [detalhe6107, setDetalhe6107] = useState<{ nf: string; categoria: string; cliente: string; produto: string; total: number }[] | null>(null);
+  const [detalhe6107, setDetalhe6107] = useState<{ nf: string; categoria: string; cliente: string; nIdPedido: number; nIdReceb: number; total: number }[] | null>(null);
   const [mostrarDetalhe6107, setMostrarDetalhe6107] = useState(false);
   const [mostrarResumo, setMostrarResumo] = useState(false);
   const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
@@ -123,7 +123,7 @@ export default function FaturamentoNFPage() {
         setErro(data.erro ?? "Erro ao buscar notas fiscais.");
         return;
       }
-      type ItemNF = { totalMercadoria: number; nf: string; cfop?: string; categoria?: string; clienteNome?: string; produto?: string };
+      type ItemNF = { totalMercadoria: number; nf: string; cfop?: string; categoria?: string; clienteNome?: string; produto?: string; nIdPedido?: number; nIdReceb?: number };
       const itens: ItemNF[] = data.itens ?? [];
       setTotalNFs(new Set(itens.map((i) => i.nf)).size);
       setTotalMerc(itens.reduce((s, i) => s + i.totalMercadoria, 0));
@@ -148,10 +148,10 @@ export default function FaturamentoNFPage() {
       setDetalhe196(lista196.length ? lista196 : null);
 
       // Detalhe do CFOP 6107 (venda a não contribuinte) — diferença de R$25.000 vs pivot
-      const grupos6107: Record<string, { nf: string; categoria: string; cliente: string; produto: string; total: number }> = {};
+      const grupos6107: Record<string, { nf: string; categoria: string; cliente: string; nIdPedido: number; nIdReceb: number; total: number }> = {};
       for (const it of itens) {
         if ((it.cfop ?? "") !== "6107") continue;
-        if (!grupos6107[it.nf]) grupos6107[it.nf] = { nf: it.nf, categoria: it.categoria ?? "", cliente: it.clienteNome ?? "", produto: it.produto ?? "", total: 0 };
+        if (!grupos6107[it.nf]) grupos6107[it.nf] = { nf: it.nf, categoria: it.categoria ?? "", cliente: it.clienteNome ?? "", nIdPedido: it.nIdPedido ?? 0, nIdReceb: it.nIdReceb ?? 0, total: 0 };
         grupos6107[it.nf].total += it.totalMercadoria;
       }
       const lista6107 = Object.values(grupos6107);
@@ -478,7 +478,8 @@ export default function FaturamentoNFPage() {
                       <th className="px-5 py-2 font-medium">NF</th>
                       <th className="px-3 py-2 font-medium">Categoria</th>
                       <th className="px-3 py-2 font-medium">Cliente</th>
-                      <th className="px-3 py-2 font-medium">Produto</th>
+                      <th className="px-3 py-2 text-right font-medium">nIdPedido</th>
+                      <th className="px-3 py-2 text-right font-medium">nIdReceb</th>
                       <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
                       <th className="w-full" />
                     </tr>
@@ -492,7 +493,8 @@ export default function FaturamentoNFPage() {
                           <td className="px-5 py-2 text-slate-700">{d.nf.replace(/^0+/, "")}</td>
                           <td className="px-3 py-2 text-slate-500">{d.categoria}</td>
                           <td className="px-3 py-2 text-slate-500">{d.cliente}</td>
-                          <td className="px-3 py-2 text-slate-500">{d.produto}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{d.nIdPedido || "—"}</td>
+                          <td className={`px-3 py-2 text-right tabular-nums ${d.nIdReceb ? "font-semibold text-rose-600" : "text-slate-500"}`}>{d.nIdReceb || "—"}</td>
                           <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
                             {formatarMoeda(d.total)}
                           </td>
