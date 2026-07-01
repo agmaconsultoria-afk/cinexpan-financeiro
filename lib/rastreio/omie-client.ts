@@ -823,9 +823,11 @@ export async function listarNotasFiscais(
   // para frente a partir daí — Jan/2026 a Jun/2026 são alcançados em ~11 + ~21 chamadas.
   if (opcoes.dataDe || opcoes.dataAte) {
     try {
+      // Mesmo tamanho de página do fetch principal (50) para a indexação de
+      // páginas bater — a busca binária só lê datas, então dispensa cDetalhesPedido.
       const probe = await callOmie<Record<string, unknown>>(
         cred, "produtos/nfconsultar/", "ListarNF",
-        { pagina: 1, registros_por_pagina: 100 }
+        { pagina: 1, registros_por_pagina: 50 }
       );
       const ex = extrairNFResp(probe);
       totalPaginas = ex.pags;
@@ -842,7 +844,7 @@ export async function listarNotasFiscais(
           try {
             const rm = await callOmie<Record<string, unknown>>(
               cred, "produtos/nfconsultar/", "ListarNF",
-              { pagina: mid, registros_por_pagina: 100 }
+              { pagina: mid, registros_por_pagina: 50 }
             );
             const lm = extrairNFResp(rm).lista;
             const ideLast = (lm[lm.length - 1]?.ide as Record<string, unknown>) ?? {};
