@@ -3,11 +3,12 @@ import {
   lerCredenciais,
   listarContasReceber,
   listarMovimentosReceber,
+  listarNotasFiscais,
   amostrarContasReceber,
   amostrarMovimentos,
   resolverClientes,
 } from "@/lib/rastreio/omie-client";
-import { salvarCompetencia } from "@/lib/rastreio/db";
+import { salvarCompetencia, setFaturamentoOmie } from "@/lib/rastreio/db";
 import { exigirEdicao } from "@/lib/auth/session";
 
 // Sempre dinâmico (lê credenciais e chama API externa em tempo de requisição).
@@ -107,9 +108,35 @@ export async function GET(req: NextRequest) {
       await resolverClientes(cred, resultado.contas);
     }
 
+    // APURAÇÃO ANCORADA NO FATURAMENTO: busca as NFs de venda (Pedido de Venda)
+    // do mês e marca cada título com ehVenda = (NF do título ∈ NFs de venda).
+    // Assim a apuração passa a considerar só o financeiro das vendas do mês —
+    // títulos de outros meses, remessas e devoluções ficam de fora.
+    let faturamentoOmie = 0;
+    let nfsVenda = 0;
+    if (competencia && fonte !== "mf" && dataDe) {
+      try {
+        const nf = await listarNotasFiscais(cred, { dataDe, dataAte });
+        const norm = (v: unknown) => String(v ?? "").replace(/\D/g, "").replace(/^0+/, "");
+        const setVenda = new Set<string>();
+        for (const it of nf.itens) {
+          const n = norm(it.nf);
+          if (n) setVenda.add(n);
+          faturamentoOmie += it.totalMercadoria;
+        }
+        nfsVenda = setVenda.size;
+        for (const c of resultado.contas) {
+          c.ehVenda = setVenda.has(norm(c.notaFiscal));
+        }
+      } catch {
+        // se a consulta de NF falhar, mantém os títulos sem marcação (apuração antiga)
+      }
+    }
+
     // Grava a competência na base (histórico) — não re-sincronizar o passado.
     if (competencia && fonte !== "mf" && resultado.contas.length > 0) {
       await salvarCompetencia(competencia, resultado.contas, emitidoEm);
+      if (faturamentoOmie > 0) await setFaturamentoOmie(competencia, faturamentoOmie);
     }
 
     return NextResponse.json({
@@ -124,6 +151,8 @@ export async function GET(req: NextRequest) {
       enriquecidos: resultado.enriquecidos,
       paginasMF: resultado.paginasMF,
       truncadoMF: resultado.truncadoMF,
+      faturamentoOmie,
+      nfsVenda,
       contas: resultado.contas,
       ...(debug ? { amostraBruta: resultado.amostraBruta } : {}),
     });

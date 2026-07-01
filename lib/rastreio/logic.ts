@@ -171,8 +171,10 @@ export function montarDemonstrativo(
   const inicio = addMeses(competencia, -3);
   const meses = Array.from({ length: 12 }, (_, i) => addMeses(inicio, i));
 
-  // Pré-filtra apenas as contas da competência selecionada.
-  const doMes = contas.filter((c) => c.competencia === competencia);
+  // Apuração ancorada no faturamento: só os títulos vinculados a NFs de venda do
+  // mês (ehVenda). ehVenda === false = título de outro mês/remessa/devolução (fora).
+  // undefined = competência ainda não re-apurada com a nova lógica → mantém (compat).
+  const doMes = contas.filter((c) => c.competencia === competencia && c.ehVenda !== false);
 
   const linhas: LinhaDemonstrativo[] = meses.map((mes) => {
     const naLinha = doMes.filter((c) =>

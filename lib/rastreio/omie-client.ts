@@ -153,6 +153,12 @@ export async function callOmie<T = unknown>(
       await sleep(2500);
       return callOmie<T>(cred, recurso, call, param, tentativasRestantes - 1);
     }
+    // Trava de concorrência do Omie (mesmo método chamado ao mesmo tempo) —
+    // aguarda um pouco (escalonado) e repete.
+    if (/sendo executada|existe uma requisi/i.test(fs) && tentativasRestantes > 0) {
+      await sleep(1500 + (3 - tentativasRestantes) * 1500);
+      return callOmie<T>(cred, recurso, call, param, tentativasRestantes - 1);
+    }
     throw new Error(`Omie: ${fs}`);
   }
   if (status < 200 || status >= 300) {
@@ -877,7 +883,7 @@ export async function listarNotasFiscais(
   if (fonteConfirmada && fonte === "nfconsultar") {
     bufferPaginas = [];
     const ateIso = brParaIso(opcoes.dataAte);
-    const CONC = 4; // páginas simultâneas (equilíbrio velocidade x limite do Omie)
+    const CONC = 2; // páginas simultâneas (o Omie trava chamadas concorrentes do mesmo método)
     let p = pagina;
     let parar = false;
     let pgsAlemDoFim = 0; // páginas consecutivas totalmente após dataAte

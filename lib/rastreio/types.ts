@@ -36,6 +36,10 @@ export interface ContaReceber {
   codigoOmie?: string; // código do lançamento no Omie (para cruzar com Movimentos)
   clienteCodigo?: string; // código do cliente no Omie (para resolver o nome)
   clienteDoc?: string; // CNPJ/CPF do cliente (fallback de identificação)
+  // Apuração ancorada no faturamento: true quando a NF do título é uma NF de
+  // venda (Pedido de Venda) do mês; false quando não é (NF de outro mês,
+  // remessa, devolução, cancelada). undefined = competência ainda não re-apurada.
+  ehVenda?: boolean;
 }
 
 /** Conta a receber com as colunas calculadas da planilha-mãe. */

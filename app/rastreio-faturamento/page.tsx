@@ -210,7 +210,7 @@ export default function RastreioFaturamentoPage() {
   const relatorio = useMemo(
     () =>
       competencias.map((comp) => {
-        const doMes = contas.filter((c) => c.competencia === comp);
+        const doMes = contas.filter((c) => c.competencia === comp && c.ehVenda !== false);
         const aReceber = doMes.reduce((a, c) => a + c.valorAReceber, 0);
         const recebido = doMes.reduce((a, c) => a + c.valorRecebidoCalc, 0);
         const atrasado = doMes.reduce((a, c) => a + c.atraso, 0);
@@ -270,6 +270,7 @@ export default function RastreioFaturamentoPage() {
       contas.filter(
         (c) =>
           c.competencia === competencia &&
+          c.ehVenda !== false &&
           (mes == null ||
             (visao === "Vencimento" ? c.mesVencimento : c.mesRecebimento) === mes) &&
           Math.abs(valorDe(c, col)) > 0.005
@@ -294,14 +295,13 @@ export default function RastreioFaturamentoPage() {
       } else {
         await carregarDoBanco(); // recarrega o histórico acumulado da base
         setCompetencia(mesOmie); // mostra a competência recém-sincronizada
-        const enr =
-          dados.enriquecidos != null
-            ? ` · cruzados c/ MF: ${dados.enriquecidos}` +
-              (dados.truncadoMF ? " (parcial — avise para ampliar)" : "")
+        const fat =
+          dados.faturamentoOmie > 0
+            ? ` · faturamento ${dados.nfsVenda} NFs de venda apurado e amarrado aos títulos`
             : "";
         setAviso(
           `${dados.contas.length} contas sincronizadas do Omie · ` +
-            `páginas ${dados.paginasLidas}/${dados.totalPaginas}${enr}`
+            `páginas ${dados.paginasLidas}/${dados.totalPaginas}${fat}`
         );
       }
     } catch {
