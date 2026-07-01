@@ -180,10 +180,12 @@ export default function RastreioFaturamentoPage() {
   const [mesOmie, setMesOmie] = useState(() => new Date().toISOString().slice(0, 7));
   // Drill-down: célula clicada (coluna + mês; mês null = total da competência).
   const [detalhe, setDetalhe] = useState<{ col: Coluna; mes: string | null } | null>(null);
-  // Diagnóstico contas a receber x faturamento (aberto quando o gap > 5 p.p.).
+  // Diagnóstico contas a receber x faturamento. O limite do gap (em pontos
+  // percentuais) é configurável pelo usuário — o botão aparece quando o gap passa dele.
   const [diagCarregando, setDiagCarregando] = useState(false);
   const [diag, setDiag] = useState<DiagResultado | null>(null);
   const [diagErro, setDiagErro] = useState<string | null>(null);
+  const [gapLimite, setGapLimite] = useState(5);
 
   // Mês atual no formato YYYY-MM — para ocultar "Ainda Falta Receber" em meses passados.
   const mesAtual = new Date().toISOString().slice(0, 7);
@@ -599,15 +601,31 @@ export default function RastreioFaturamentoPage() {
                 </div>
               </div>
 
-              {/* Diagnóstico — aparece quando o gap passa de 5 pontos percentuais */}
-              {dem.baseFaturamento > 0 && Math.abs(dem.percentualRastreado - 1) > 0.05 && (
-                <div className="no-print mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              {/* Limite do gap configurável pelo usuário */}
+              <div className="no-print mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                <label htmlFor="gapLimite">Alertar quando o gap passar de</label>
+                <input
+                  id="gapLimite"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={gapLimite}
+                  onChange={(e) => setGapLimite(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                  className="w-16 rounded-md border border-slate-300 px-2 py-1 text-right text-sm focus:border-brand-500 focus:outline-none"
+                />
+                <span>pontos percentuais (p.p.)</span>
+              </div>
+
+              {/* Diagnóstico — aparece quando o gap passa do limite definido acima */}
+              {dem.baseFaturamento > 0 && Math.abs(dem.percentualRastreado - 1) * 100 > gapLimite && (
+                <div className="no-print mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <div className="flex items-start gap-2 text-sm text-amber-800">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>
                       O rastreamento está a{" "}
                       <strong>{formatarPercent(Math.abs(dem.percentualRastreado - 1))}</strong> do
-                      faturamento (gap acima de 5 p.p.). O diagnóstico consulta o Omie{" "}
+                      faturamento (gap acima de {gapLimite} p.p.). O diagnóstico consulta o Omie{" "}
                       <strong>em tempo real</strong> para achar vendas canceladas, devolvidas ou
                       remessas emitidas em outro mês (pode levar alguns segundos).
                     </span>
