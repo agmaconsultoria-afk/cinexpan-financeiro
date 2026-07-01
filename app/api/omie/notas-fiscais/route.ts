@@ -70,6 +70,9 @@ export async function GET(req: NextRequest) {
     const resumoPorNatOp: Record<string, { nfs: number; total: number }> = {};
     const resumoPorOperacao: Record<string, { nfs: number; total: number }> = {};
     const resumoPorCFOP: Record<string, { nfs: number; total: number }> = {};
+    const resumoPorCategoria: Record<string, { nfs: number; total: number }> = {};
+    const resumoPorFinNFe: Record<string, { nfs: number; total: number }> = {};
+    const rotuloFinNFe: Record<string, string> = { "1": "1 - Normal", "2": "2 - Complementar", "3": "3 - Ajuste", "4": "4 - Devolução" };
     for (const item of resultado.itens) {
       const chaveNat = item.natOp || "(sem natureza)";
       if (!resumoPorNatOp[chaveNat]) resumoPorNatOp[chaveNat] = { nfs: 0, total: 0 };
@@ -85,6 +88,16 @@ export async function GET(req: NextRequest) {
       if (!resumoPorCFOP[chaveCfop]) resumoPorCFOP[chaveCfop] = { nfs: 0, total: 0 };
       resumoPorCFOP[chaveCfop].nfs++;
       resumoPorCFOP[chaveCfop].total += item.totalMercadoria;
+
+      const chaveCat = item.categoria || "(sem categoria)";
+      if (!resumoPorCategoria[chaveCat]) resumoPorCategoria[chaveCat] = { nfs: 0, total: 0 };
+      resumoPorCategoria[chaveCat].nfs++;
+      resumoPorCategoria[chaveCat].total += item.totalMercadoria;
+
+      const chaveFin = rotuloFinNFe[item.finNFe] || item.finNFe || "(sem finNFe)";
+      if (!resumoPorFinNFe[chaveFin]) resumoPorFinNFe[chaveFin] = { nfs: 0, total: 0 };
+      resumoPorFinNFe[chaveFin].nfs++;
+      resumoPorFinNFe[chaveFin].total += item.totalMercadoria;
     }
 
     return NextResponse.json({
@@ -96,6 +109,8 @@ export async function GET(req: NextRequest) {
       resumoPorNatOp,
       resumoPorOperacao,
       resumoPorCFOP,
+      resumoPorCategoria,
+      resumoPorFinNFe,
       excluidas: resultado.excluidas,
       primeiroCompl: resultado.primeiroCompl,
       // Incluído apenas quando itens = 0 — ajuda a diagnosticar estrutura real da API

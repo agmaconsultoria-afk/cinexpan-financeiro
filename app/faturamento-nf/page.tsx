@@ -47,10 +47,14 @@ export default function FaturamentoNFPage() {
   const [resumoPorNatOp, setResumoPorNatOp] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorOperacao, setResumoPorOperacao] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorCFOP, setResumoPorCFOP] = useState<Record<string, { nfs: number; total: number }> | null>(null);
+  const [resumoPorCategoria, setResumoPorCategoria] = useState<Record<string, { nfs: number; total: number }> | null>(null);
+  const [resumoPorFinNFe, setResumoPorFinNFe] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [excluidas, setExcluidas] = useState<{ nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] | null>(null);
   const [mostrarResumo, setMostrarResumo] = useState(false);
   const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
   const [mostrarCFOP, setMostrarCFOP] = useState(false);
+  const [mostrarCategoria, setMostrarCategoria] = useState(false);
+  const [mostrarFinNFe, setMostrarFinNFe] = useState(false);
   const [mostrarExcluidas, setMostrarExcluidas] = useState(false);
 
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
@@ -95,10 +99,14 @@ export default function FaturamentoNFPage() {
     setResumoPorNatOp(null);
     setResumoPorOperacao(null);
     setResumoPorCFOP(null);
+    setResumoPorCategoria(null);
+    setResumoPorFinNFe(null);
     setExcluidas(null);
     setMostrarResumo(false);
     setMostrarResumoOp(false);
     setMostrarCFOP(false);
+    setMostrarCategoria(false);
+    setMostrarFinNFe(false);
     setMostrarExcluidas(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
@@ -113,6 +121,8 @@ export default function FaturamentoNFPage() {
       setResumoPorNatOp(data.resumoPorNatOp ?? null);
       setResumoPorOperacao(data.resumoPorOperacao ?? null);
       setResumoPorCFOP(data.resumoPorCFOP ?? null);
+      setResumoPorCategoria(data.resumoPorCategoria ?? null);
+      setResumoPorFinNFe(data.resumoPorFinNFe ?? null);
       setExcluidas(data.excluidas ?? null);
       setBuscou(true);
     } catch {
@@ -322,6 +332,82 @@ export default function FaturamentoNFPage() {
                       .map(([cfop, v]) => (
                         <tr key={cfop} className="border-b border-slate-100 last:border-0">
                           <td className="px-5 py-2 text-slate-700">{cfop}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
+                            {formatarMoeda(v.total)}
+                          </td>
+                          <td className="w-full" />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {resumoPorCategoria && Object.keys(resumoPorCategoria).length > 0 && (
+            <div className="card mb-4 overflow-hidden">
+              <button
+                onClick={() => setMostrarCategoria((v) => !v)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
+              >
+                <span className="font-medium text-slate-600">Composição por categoria (cCodCateg)</span>
+                <span className="text-xs">{mostrarCategoria ? "▲ ocultar" : "▼ ver"}</span>
+              </button>
+              {mostrarCategoria && (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-y border-slate-200 text-left text-slate-500">
+                      <th className="px-5 py-2 font-medium">Categoria</th>
+                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
+                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
+                      <th className="w-full" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(resumoPorCategoria)
+                      .sort((a, b) => b[1].total - a[1].total)
+                      .map(([cat, v]) => (
+                        <tr key={cat} className="border-b border-slate-100 last:border-0">
+                          <td className="px-5 py-2 text-slate-700">{cat}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
+                            {formatarMoeda(v.total)}
+                          </td>
+                          <td className="w-full" />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {resumoPorFinNFe && Object.keys(resumoPorFinNFe).length > 0 && (
+            <div className="card mb-4 overflow-hidden">
+              <button
+                onClick={() => setMostrarFinNFe((v) => !v)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
+              >
+                <span className="font-medium text-slate-600">Composição por finalidade da NF (finNFe)</span>
+                <span className="text-xs">{mostrarFinNFe ? "▲ ocultar" : "▼ ver"}</span>
+              </button>
+              {mostrarFinNFe && (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-y border-slate-200 text-left text-slate-500">
+                      <th className="px-5 py-2 font-medium">Finalidade</th>
+                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
+                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
+                      <th className="w-full" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(resumoPorFinNFe)
+                      .sort((a, b) => b[1].total - a[1].total)
+                      .map(([fin, v]) => (
+                        <tr key={fin} className="border-b border-slate-100 last:border-0">
+                          <td className="px-5 py-2 text-slate-700">{fin}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
                           <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
                             {formatarMoeda(v.total)}

@@ -732,6 +732,7 @@ export interface NotaFiscalItem {
   situacao: string;
   tags: string;
   cfop: string;
+  categoria?: string; // compl.cCodCateg (categoria financeira do Omie)
   vencimento?: string;
 }
 
@@ -967,26 +968,10 @@ export async function listarNotasFiscais(
         const clienteNome = (pega(destInt, "cRazao", "xNome") ?? "").toString();
         const clienteDoc = (pega(destInt, "cnpj_cpf", "CNPJ", "CPF") ?? "").toString();
 
-        // A "Operação: Pedido de Venda" do Omie é a NF gerada a partir de um pedido de
-        // venda. O nfconsultar expõe isso em compl.nIdPedido (≠ 0 quando há pedido de
-        // origem). É o mesmo critério do relatório do Omie: uma amostra grátis (CFOP
-        // 6.911) emitida de um pedido entra como Pedido de Venda, enquanto uma venda com
-        // CFOP normal SEM pedido (remessa de conserto, venda direta) fica de fora.
-        const nIdPedido = num(compl.nIdPedido);
-        if (nIdPedido === 0) {
-          if (det.length > 0) {
-            const cfopsNF = Array.from(new Set(det.map((item) => {
-              const prod = (item.prod as Record<string, unknown>) ?? {};
-              return ((pega(prod, "CFOP", "cfop") ?? "").toString()).replace(/\./g, "");
-            }).filter(Boolean))).join(", ");
-            const totalNF = det.reduce((s, item) => {
-              const prod = (item.prod as Record<string, unknown>) ?? {};
-              return s + num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0);
-            }, 0);
-            excluidas.push({ nf: nfNum, dataEmissao, operacao: "Sem pedido de venda", cfops: cfopsNF, total: totalNF });
-          }
-          continue;
-        }
+        // DIAGNÓSTICO: inclui todas as NFs de saída autorizadas e expõe categoria
+        // (compl.cCodCateg) + finNFe para descobrir qual campo separa o "Pedido de
+        // Venda" do relatório do Omie das remessas/complementares que não entram.
+        const categoria = (compl.cCodCateg ?? "").toString();
 
         if (det.length > 0) {
           for (const item of det) {
@@ -1003,7 +988,7 @@ export async function listarNotasFiscais(
               valorUnitario: num(pega(prod, "vUnCom") ?? 0),
               // nCMCTotal é CMC (custo), vProd é o valor real do produto
               totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
-              operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop,
+              operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop, categoria,
             });
           }
         } else {
@@ -1014,7 +999,7 @@ export async function listarNotasFiscais(
             clienteNome: clienteNome || clienteDoc, clienteDoc,
             produto: "", quantidade: 1, unidade: "", valorUnitario: valorNF,
             totalMercadoria: valorNF,
-            operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop: "",
+            operacao: "Pedido de Venda", natOp, finNFe, situacao, tags: "", cfop: "", categoria,
           });
         }
       } else if (fonte === "nf") {
