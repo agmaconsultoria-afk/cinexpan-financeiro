@@ -45,7 +45,9 @@ export default function FaturamentoNFPage() {
   const [mesGravado, setMesGravado] = useState("");
 
   const [resumoPorNatOp, setResumoPorNatOp] = useState<Record<string, { nfs: number; total: number }> | null>(null);
+  const [resumoPorOperacao, setResumoPorOperacao] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [mostrarResumo, setMostrarResumo] = useState(false);
+  const [mostrarResumoOp, setMostrarResumoOp] = useState(false);
 
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
@@ -87,7 +89,9 @@ export default function FaturamentoNFPage() {
     setBuscou(false);
     setGravado(false);
     setResumoPorNatOp(null);
+    setResumoPorOperacao(null);
     setMostrarResumo(false);
+    setMostrarResumoOp(false);
     try {
       const res = await fetch(`/api/omie/notas-fiscais?competencia=${competencia}`);
       const data = await res.json();
@@ -99,6 +103,7 @@ export default function FaturamentoNFPage() {
       setTotalNFs(new Set(itens.map((i) => i.nf)).size);
       setTotalMerc(itens.reduce((s, i) => s + i.totalMercadoria, 0));
       setResumoPorNatOp(data.resumoPorNatOp ?? null);
+      setResumoPorOperacao(data.resumoPorOperacao ?? null);
       setBuscou(true);
     } catch {
       setErro("Erro de conexão. Tente novamente.");
@@ -231,6 +236,44 @@ export default function FaturamentoNFPage() {
                       .map(([nat, v]) => (
                         <tr key={nat} className="border-b border-slate-100 last:border-0">
                           <td className="px-5 py-2 text-slate-700">{nat || "(sem natureza)"}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
+                            {formatarMoeda(v.total)}
+                          </td>
+                          <td className="w-full" />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {resumoPorOperacao && Object.keys(resumoPorOperacao).length > 0 && (
+            <div className="card mb-4 overflow-hidden">
+              <button
+                onClick={() => setMostrarResumoOp((v) => !v)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
+              >
+                <span className="font-medium text-slate-600">Composição por operação Omie (cOperacao)</span>
+                <span className="text-xs">{mostrarResumoOp ? "▲ ocultar" : "▼ ver"}</span>
+              </button>
+              {mostrarResumoOp && (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-y border-slate-200 text-left text-slate-500">
+                      <th className="px-5 py-2 font-medium">Operação</th>
+                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
+                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
+                      <th className="w-full" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(resumoPorOperacao)
+                      .sort((a, b) => b[1].total - a[1].total)
+                      .map(([op, v]) => (
+                        <tr key={op} className="border-b border-slate-100 last:border-0">
+                          <td className="px-5 py-2 text-slate-700">{op}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
                           <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
                             {formatarMoeda(v.total)}
