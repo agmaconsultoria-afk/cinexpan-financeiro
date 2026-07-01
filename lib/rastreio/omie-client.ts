@@ -735,6 +735,8 @@ export interface NotaFiscalItem {
   categoria?: string; // compl.cCodCateg (categoria financeira do Omie)
   nIdPedido?: number; // compl.nIdPedido (pedido de venda de origem, 0 se não houver)
   nIdReceb?: number; // compl.nIdReceb (recebimento de origem, ≠ 0 em entradas/devoluções)
+  devolvido?: string; // pedido.cDevolvido (S = pedido devolvido)
+  devParcial?: string; // pedido.cDevParcial (S = devolução parcial)
   vencimento?: string;
 }
 
@@ -980,6 +982,8 @@ export async function listarNotasFiscais(
         const nIdReceb = num(compl.nIdReceb);
         const pedidoObj = (registro.pedido as Record<string, unknown>) ?? {};
         const opPedido = (pedidoObj.opPedido ?? "").toString().trim();
+        const devolvido = (pedidoObj.cDevolvido ?? "").toString().trim().toUpperCase();
+        const devParcial = (pedidoObj.cDevParcial ?? "").toString().trim().toUpperCase();
         // opPedido é o código da operação do pedido no Omie:
         //   11 = Pedido de Venda (faturamento)   14 = Remessa de Produto (não é venda)
         const rotuloOp: Record<string, string> = { "11": "Pedido de Venda", "14": "Remessa de Produto" };
@@ -1016,7 +1020,7 @@ export async function listarNotasFiscais(
               valorUnitario: num(pega(prod, "vUnCom") ?? 0),
               // nCMCTotal é CMC (custo), vProd é o valor real do produto
               totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
-              operacao: operacaoNF, natOp, finNFe, situacao, tags: "", cfop, categoria, nIdPedido, nIdReceb,
+              operacao: operacaoNF, natOp, finNFe, situacao, tags: "", cfop, categoria, nIdPedido, nIdReceb, devolvido, devParcial,
             });
           }
         } else {
@@ -1027,7 +1031,7 @@ export async function listarNotasFiscais(
             clienteNome: clienteNome || clienteDoc, clienteDoc,
             produto: "", quantidade: 1, unidade: "", valorUnitario: valorNF,
             totalMercadoria: valorNF,
-            operacao: operacaoNF, natOp, finNFe, situacao, tags: "", cfop: "", categoria, nIdPedido, nIdReceb,
+            operacao: operacaoNF, natOp, finNFe, situacao, tags: "", cfop: "", categoria, nIdPedido, nIdReceb, devolvido, devParcial,
           });
         }
       } else if (fonte === "nf") {

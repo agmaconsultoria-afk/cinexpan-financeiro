@@ -49,6 +49,8 @@ export default function FaturamentoNFPage() {
   const [resumoPorCFOP, setResumoPorCFOP] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorCategoria, setResumoPorCategoria] = useState<Record<string, { nfs: number; total: number }> | null>(null);
   const [resumoPorFinNFe, setResumoPorFinNFe] = useState<Record<string, { nfs: number; total: number }> | null>(null);
+  const [resumoPorDevolvido, setResumoPorDevolvido] = useState<Record<string, { nfs: number; total: number }> | null>(null);
+  const [mostrarDevolvido, setMostrarDevolvido] = useState(false);
   const [excluidas, setExcluidas] = useState<{ nf: string; dataEmissao: string; operacao: string; cfops: string; total: number }[] | null>(null);
   const [detalhe196, setDetalhe196] = useState<{ nf: string; cfops: string; cliente: string; produto: string; total: number }[] | null>(null);
   const [mostrarDetalhe196, setMostrarDetalhe196] = useState(false);
@@ -105,6 +107,8 @@ export default function FaturamentoNFPage() {
     setResumoPorCFOP(null);
     setResumoPorCategoria(null);
     setResumoPorFinNFe(null);
+    setResumoPorDevolvido(null);
+    setMostrarDevolvido(false);
     setExcluidas(null);
     setDetalhe196(null);
     setDetalhe6107(null);
@@ -132,6 +136,7 @@ export default function FaturamentoNFPage() {
       setResumoPorCFOP(data.resumoPorCFOP ?? null);
       setResumoPorCategoria(data.resumoPorCategoria ?? null);
       setResumoPorFinNFe(data.resumoPorFinNFe ?? null);
+      setResumoPorDevolvido(data.resumoPorDevolvido ?? null);
       setExcluidas(data.excluidas ?? null);
 
       // Detalhe da categoria 1.01.96 (misturada) — agrupa por NF p/ achar o padrão
@@ -326,6 +331,44 @@ export default function FaturamentoNFPage() {
                       .map(([op, v]) => (
                         <tr key={op} className="border-b border-slate-100 last:border-0">
                           <td className="px-5 py-2 text-slate-700">{op}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
+                            {formatarMoeda(v.total)}
+                          </td>
+                          <td className="w-full" />
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {resumoPorDevolvido && Object.keys(resumoPorDevolvido).length > 0 && (
+            <div className="card mb-4 overflow-hidden border-amber-200">
+              <button
+                onClick={() => setMostrarDevolvido((v) => !v)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50"
+              >
+                <span className="font-medium text-amber-700">Composição por devolução (pedido devolvido?)</span>
+                <span className="text-xs">{mostrarDevolvido ? "▲ ocultar" : "▼ ver"}</span>
+              </button>
+              {mostrarDevolvido && (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="border-y border-slate-200 text-left text-slate-500">
+                      <th className="px-5 py-2 font-medium">Situação</th>
+                      <th className="px-3 py-2 text-right font-medium">Linhas</th>
+                      <th className="px-3 py-2 text-right font-medium">Total (R$)</th>
+                      <th className="w-full" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(resumoPorDevolvido)
+                      .sort((a, b) => b[1].total - a[1].total)
+                      .map(([dev, v]) => (
+                        <tr key={dev} className="border-b border-slate-100 last:border-0">
+                          <td className="px-5 py-2 text-slate-700">{dev}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-slate-500">{v.nfs}</td>
                           <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-700">
                             {formatarMoeda(v.total)}

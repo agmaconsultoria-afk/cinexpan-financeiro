@@ -110,6 +110,7 @@ export async function GET(req: NextRequest) {
     const resumoPorCFOP: Record<string, { nfs: number; total: number }> = {};
     const resumoPorCategoria: Record<string, { nfs: number; total: number }> = {};
     const resumoPorFinNFe: Record<string, { nfs: number; total: number }> = {};
+    const resumoPorDevolvido: Record<string, { nfs: number; total: number }> = {};
     const rotuloFinNFe: Record<string, string> = { "1": "1 - Normal", "2": "2 - Complementar", "3": "3 - Ajuste", "4": "4 - Devolução" };
     for (const item of resultado.itens) {
       const chaveNat = item.natOp || "(sem natureza)";
@@ -136,6 +137,11 @@ export async function GET(req: NextRequest) {
       if (!resumoPorFinNFe[chaveFin]) resumoPorFinNFe[chaveFin] = { nfs: 0, total: 0 };
       resumoPorFinNFe[chaveFin].nfs++;
       resumoPorFinNFe[chaveFin].total += item.totalMercadoria;
+
+      const chaveDev = item.devParcial === "S" ? "Devolução parcial" : item.devolvido === "S" ? "Devolvido (total)" : "Não devolvido";
+      if (!resumoPorDevolvido[chaveDev]) resumoPorDevolvido[chaveDev] = { nfs: 0, total: 0 };
+      resumoPorDevolvido[chaveDev].nfs++;
+      resumoPorDevolvido[chaveDev].total += item.totalMercadoria;
     }
 
     return NextResponse.json({
@@ -149,6 +155,7 @@ export async function GET(req: NextRequest) {
       resumoPorCFOP,
       resumoPorCategoria,
       resumoPorFinNFe,
+      resumoPorDevolvido,
       excluidas: resultado.excluidas,
       primeiroCompl: resultado.primeiroCompl,
       // Incluído apenas quando itens = 0 — ajuda a diagnosticar estrutura real da API
