@@ -112,11 +112,18 @@ export async function GET(req: NextRequest) {
     // do mês e marca cada título com ehVenda = (NF do título ∈ NFs de venda).
     // Assim a apuração passa a considerar só o financeiro das vendas do mês —
     // títulos de outros meses, remessas e devoluções ficam de fora.
+    // ATENÇÃO: a janela das NFs é o MÊS EXATO (01 ao último dia). Não reutilizar
+    // dataDe/dataAte das contas a receber — aquela janela avança até o fim do mês
+    // seguinte (folga p/ títulos registrados com atraso) e somaria NFs de 2 meses.
     let faturamentoOmie = 0;
     let nfsVenda = 0;
-    if (competencia && fonte !== "mf" && dataDe) {
+    if (competencia && fonte !== "mf" && /^\d{4}-\d{2}$/.test(competencia)) {
       try {
-        const nf = await listarNotasFiscais(cred, { dataDe, dataAte });
+        const [y, m] = competencia.split("-").map(Number);
+        const ultimoDia = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        const nfDe = `01/${p2(m)}/${y}`;
+        const nfAte = `${p2(ultimoDia)}/${p2(m)}/${y}`;
+        const nf = await listarNotasFiscais(cred, { dataDe: nfDe, dataAte: nfAte });
         const norm = (v: unknown) => String(v ?? "").replace(/\D/g, "").replace(/^0+/, "");
         const setVenda = new Set<string>();
         for (const it of nf.itens) {
