@@ -1093,12 +1093,30 @@ export async function listarNotasFiscais(
           continue;
         }
 
+        // CFOP 5.116/6.116 = entrega de venda originada de encomenda (entrega
+        // futura). A receita já foi reconhecida no simples faturamento (5.922/
+        // 6.922) — contar a entrega também DUPLICARIA o faturamento.
+        const CFOPS_ENTREGA_FUTURA = new Set(["5116", "6116"]);
+        const soEntregaFutura =
+          det.length > 0 &&
+          det.every((item) => {
+            const prod = (item.prod as Record<string, unknown>) ?? {};
+            const cf = ((pega(prod, "CFOP", "cfop") ?? "").toString()).replace(/\./g, "");
+            return CFOPS_ENTREGA_FUTURA.has(cf);
+          });
+        if (soEntregaFutura) {
+          registrarExcluida("Entrega futura (5116/6116)");
+          continue;
+        }
+
         if (det.length > 0) {
           for (const item of det) {
             const prod = (item.prod as Record<string, unknown>) ?? {};
             // CFOP vem como "5.101" — normaliza removendo o ponto
             const cfopRaw = (pega(prod, "CFOP", "cfop") ?? "").toString();
             const cfop = cfopRaw.replace(/\./g, "");
+            // Item de entrega futura em NF mista — também fica fora do faturamento
+            if (CFOPS_ENTREGA_FUTURA.has(cfop)) continue;
             itens.push({
               dataEmissao, nf: nfNum, serie,
               clienteNome: clienteNome || clienteDoc, clienteDoc,
