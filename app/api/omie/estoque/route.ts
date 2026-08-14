@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { lerCredenciais, posicaoEstoque, diagnosticoEstoqueProdutos } from "@/lib/rastreio/omie-client";
+import { salvarPosicaoEstoque } from "@/lib/rastreio/db";
 import { exigirEdicao } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +65,17 @@ export async function GET(req: NextRequest) {
     }
 
     const res = await posicaoEstoque(cred, { dataPosicao, incluirZerados, debug, debugCodigos });
+
+    // Grava o snapshot da posição (base para a análise Estoque × Venda / giro /
+    // custo médio) — trava o custo do mês. Não falha a consulta se o banco der erro.
+    if (!incluirZerados) {
+      try {
+        await salvarPosicaoEstoque(competencia, dataPosicao, periodo, res.itens);
+      } catch (e) {
+        console.error("[estoque] falha ao gravar snapshot:", e instanceof Error ? e.message : e);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       competencia,

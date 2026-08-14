@@ -86,6 +86,20 @@ async function criarSchema(): Promise<void> {
       processado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Snapshot da posição de estoque por competência (base para análise
+  // Estoque × Venda: giro de estoque, custo médio). Um snapshot por mês
+  // (o último "Executar" substitui o anterior). Trava o custo histórico.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS estoque_posicao (
+      competencia   TEXT PRIMARY KEY,
+      data_posicao  TEXT NOT NULL,
+      periodo       TEXT,
+      total_itens   INTEGER NOT NULL DEFAULT 0,
+      total_cmc     NUMERIC NOT NULL DEFAULT 0,
+      itens         JSONB NOT NULL DEFAULT '[]'::jsonb,
+      gerado_em     TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 
   // Seeds de faturamento/vendas PF (uma vez; nunca sobrescreve edições).
   await semearMapa("rastreio_faturamento", FATURAMENTO_SEED);
@@ -439,6 +453,110 @@ export async function gravarHistoricoOmie(
 export async function limparHistoricoOmie(): Promise<void> {
   await ensureSchema();
   await getPool().query("DELETE FROM omie_historico_processamento");
+}
+
+// ----- Snapshot da Posição de Estoque (Estoque × Venda / giro / custo médio) -----
+
+/** Item de estoque gravado no snapshot (mesma forma de PosicaoEstoqueItem). */
+export interface EstoquePosicaoItem {
+  codigo: string;
+  descricao: string;
+  ncm: string;
+  tipoSped: string;
+  familia: string;
+  unidade: string;
+  quantidade: number;
+  cmcUnitario: number;
+  cmcTotal: number;
+}
+
+export interface EstoquePosicaoResumo {
+  competencia: string;
+  dataPosicao: string;
+  periodo: string | null;
+  totalItens: number;
+  totalCmc: number;
+  geradoEm: string;
+}
+
+export interface EstoquePosicaoSnapshot extends EstoquePosicaoResumo {
+  itens: EstoquePosicaoItem[];
+}
+
+/** Grava (substitui) o snapshot da posição de estoque de uma competência. */
+export async function salvarPosicaoEstoque(
+  competencia: string,
+  dataPosicao: string,
+  periodo: string | null,
+  itens: EstoquePosicaoItem[]
+): Promise<void> {
+  await ensureSchema();
+  const totalCmc = itens.reduce((s, i) => s + (Number(i.cmcTotal) || 0), 0);
+  await getPool().query(
+    `INSERT INTO estoque_posicao (competencia, data_posicao, periodo, total_itens, total_cmc, itens, gerado_em)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
+     ON CONFLICT (competencia)
+     DO UPDATE SET data_posicao = EXCLUDED.data_posicao,
+                   periodo = EXCLUDED.periodo,
+                   total_itens = EXCLUDED.total_itens,
+                   total_cmc = EXCLUDED.total_cmc,
+                   itens = EXCLUDED.itens,
+                   gerado_em = now()`,
+    [competencia, dataPosicao, periodo, itens.length, totalCmc, JSON.stringify(itens)]
+  );
+}
+
+/** Lista os snapshots salvos (resumo, sem os itens) — mais recente por competência. */
+export async function listarPosicoesEstoque(): Promise<EstoquePosicaoResumo[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query<{
+    competencia: string;
+    data_posicao: string;
+    periodo: string | null;
+    total_itens: number;
+    total_cmc: string;
+    gerado_em: Date;
+  }>(
+    `SELECT competencia, data_posicao, periodo, total_itens, total_cmc, gerado_em
+     FROM estoque_posicao ORDER BY competencia ASC`
+  );
+  return rows.map((r) => ({
+    competencia: r.competencia,
+    dataPosicao: r.data_posicao,
+    periodo: r.periodo,
+    totalItens: Number(r.total_itens),
+    totalCmc: Number(r.total_cmc),
+    geradoEm: r.gerado_em instanceof Date ? r.gerado_em.toISOString() : String(r.gerado_em),
+  }));
+}
+
+/** Lê o snapshot completo (com itens) de uma competência. */
+export async function lerPosicaoEstoque(competencia: string): Promise<EstoquePosicaoSnapshot | null> {
+  await ensureSchema();
+  const { rows } = await getPool().query<{
+    competencia: string;
+    data_posicao: string;
+    periodo: string | null;
+    total_itens: number;
+    total_cmc: string;
+    itens: EstoquePosicaoItem[];
+    gerado_em: Date;
+  }>(
+    `SELECT competencia, data_posicao, periodo, total_itens, total_cmc, itens, gerado_em
+     FROM estoque_posicao WHERE competencia = $1`,
+    [competencia]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    competencia: r.competencia,
+    dataPosicao: r.data_posicao,
+    periodo: r.periodo,
+    totalItens: Number(r.total_itens),
+    totalCmc: Number(r.total_cmc),
+    geradoEm: r.gerado_em instanceof Date ? r.gerado_em.toISOString() : String(r.gerado_em),
+    itens: r.itens ?? [],
+  };
 }
 
 export async function lerHistoricoOmie(limite = 50): Promise<HistoricoProcessamento[]> {

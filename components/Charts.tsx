@@ -152,6 +152,57 @@ export function RastreioRelatorioChart({ dados }: { dados: PontoRastreio[] }) {
   );
 }
 
+/** Estoque (a custo) x Venda por mês (barras) + giro (linha). */
+export interface PontoEstoqueVenda {
+  rotulo: string;
+  estoque: number;
+  venda: number;
+  giro: number;
+}
+
+export function EstoqueVendaChart({ dados }: { dados: PontoEstoqueVenda[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <ComposedChart data={dados} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+        <XAxis dataKey="rotulo" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+        <YAxis
+          yAxisId="left"
+          tickFormatter={(v) => formatarMoedaCompacta(v)}
+          tick={{ fontSize: 12 }}
+          stroke="#94a3b8"
+          width={70}
+        />
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tickFormatter={(v) => `${v.toFixed(1)}x`}
+          tick={{ fontSize: 12 }}
+          stroke="#94a3b8"
+          width={48}
+        />
+        <Tooltip
+          formatter={(v: number, name: string) =>
+            name === "Giro" ? `${v.toFixed(2)}x` : formatarMoeda(v)
+          }
+        />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Bar yAxisId="left" dataKey="estoque" name="Estoque (a custo)" fill="#cd8a55" radius={[4, 4, 0, 0]} />
+        <Bar yAxisId="left" dataKey="venda" name="Venda" fill="#a85a2f" radius={[4, 4, 0, 0]} />
+        <Line
+          yAxisId="right"
+          type="monotone"
+          dataKey="giro"
+          name="Giro"
+          stroke="#10b981"
+          strokeWidth={2.5}
+          dot={{ r: 3 }}
+        />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
 /** Distribuição de despesas por categoria (pizza). */
 export function CategoriasPieChart({ dados }: { dados: CategoriaTotal[] }) {
   const top = dados.slice(0, 8);
