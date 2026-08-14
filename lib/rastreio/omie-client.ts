@@ -1515,12 +1515,15 @@ export async function posicaoEstoque(
       const codProd = (pega(e, "nCodProd", "codigo_produto", "nIdProduto") ?? "").toString();
       const codigo = (pega(e, "cCodigo", "codigo", "cCodInt") ?? "").toString();
       const meta = prod.porCodProd.get(codProd) ?? prod.porCodigo.get(codigo);
+      const tipoSped = meta?.tipoSped || "";
+      // "99-Outras" não entra na posição de estoque para contabilidade.
+      if (tipoSped.startsWith("99")) continue;
       const cmcTotal = num(pega(e, "nValorEstoque", "valor_estoque")) || saldo * cmc;
       itens.push({
         codigo: meta?.codigo || codigo || codProd,
         descricao: meta?.descricao || (pega(e, "cDescricao", "descricao") ?? "").toString(),
         ncm: meta?.ncm || "",
-        tipoSped: meta?.tipoSped || "",
+        tipoSped,
         familia: meta?.familia || "",
         unidade: meta?.unidade || (pega(e, "cUnidade", "unidade") ?? "").toString(),
         quantidade: saldo,
