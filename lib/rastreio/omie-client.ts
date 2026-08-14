@@ -1510,7 +1510,10 @@ export async function posicaoEstoque(
 
     for (const e of lista) {
       const saldo = num(pega(e, "fisico", "nSaldo", "saldo", "nFisico", "estoque"));
-      if (!opcoes.incluirZerados && Math.abs(saldo) < 0.0000001) continue;
+      // Saldo negativo NÃO entra no estoque contábil (é ruído de movimentação
+      // e distorce o total); saldo zerado só entra em modo debug.
+      if (saldo < 0) continue;
+      if (!opcoes.incluirZerados && saldo < 0.0000001) continue;
       const cmc = num(pega(e, "nCMC", "cmc", "nCustoMedio", "custo_medio", "nValorUnitario"));
       const codProd = (pega(e, "nCodProd", "codigo_produto", "nIdProduto") ?? "").toString();
       const codigo = (pega(e, "cCodigo", "codigo", "cCodInt") ?? "").toString();

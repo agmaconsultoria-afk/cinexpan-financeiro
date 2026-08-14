@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { Boxes, Download, Search, FileX } from "lucide-react";
 import { PageHeader } from "@/components/ui";
 import { SeletorMes } from "@/components/SeletorMes";
@@ -121,25 +121,68 @@ export default function PosicaoEstoquePage() {
       ["", "", "", "", "", rotulo, qtd, "", cmc, ""];
 
     const linhas: (string | number)[][] = [];
+    const linhasSubtotal = new Set<number>(); // índices (base sheet) das linhas de subtotal
+    let r = 1; // linha 0 = cabeçalho
     for (const g of grupos) {
       for (const i of g.linhas) {
         linhas.push([
           i.codigo, i.descricao, i.ncm, i.tipoSped, i.familia, i.unidade,
           i.quantidade, i.cmcUnitario, i.cmcTotal, i.periodo,
         ]);
+        r++;
       }
       linhas.push(linhaTotal(`Total ${g.label}`, g.totalQtd, g.totalCMC));
+      linhasSubtotal.add(r);
+      r++;
     }
     linhas.push([]);
+    r++;
     const totalGeralQtd = grupos.reduce((s, g) => s + g.totalQtd, 0);
     const totalGeralCMC = grupos.reduce((s, g) => s + g.totalCMC, 0);
     linhas.push(linhaTotal("TOTAL ESTOQUE", totalGeralQtd, totalGeralCMC));
+    const linhaTotalGeral = r;
 
     const ws = XLSX.utils.aoa_to_sheet([CABECALHO, ...linhas]);
     ws["!cols"] = [
       { wch: 16 }, { wch: 52 }, { wch: 12 }, { wch: 22 }, { wch: 20 },
       { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 22 },
     ];
+
+    // --- Formatação (cópia fiel do relatório: amarelo no cabeçalho, subtotais
+    // e total; grade fina em todas as células; números pt-BR). ---
+    const AMARELO = "FFFF00";
+    const AMARELO_CLARO = "FFF2B2";
+    const borda = { style: "thin", color: { rgb: "BFBF00" } };
+    const bordas = { top: borda, bottom: borda, left: borda, right: borda };
+    const range = XLSX.utils.decode_range(ws["!ref"]!);
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      const ehCabecalho = R === 0;
+      const ehSubtotal = linhasSubtotal.has(R);
+      const ehTotal = R === linhaTotalGeral;
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        const cell = ws[ref];
+        if (!cell) continue;
+        // Formato de número: Quantidade (col 6), CMC Unit (7), CMC Total (8).
+        if (typeof cell.v === "number") {
+          if (C === 6) cell.z = "#,##0.00";
+          else if (C === 7 || C === 8) cell.z = "#,##0.00";
+        }
+        const fill = ehCabecalho || ehTotal
+          ? AMARELO
+          : ehSubtotal
+          ? AMARELO_CLARO
+          : undefined;
+        cell.s = {
+          ...(fill ? { fill: { fgColor: { rgb: fill } } } : {}),
+          font: { bold: ehCabecalho || ehSubtotal || ehTotal, sz: 10 },
+          alignment: { vertical: "center", horizontal: C >= 6 ? "right" : "left", wrapText: false },
+          border: bordas,
+        };
+      }
+    }
+    ws["!rows"] = Array.from({ length: range.e.r + 1 }, () => ({ hpt: 15 }));
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Posição de Estoque");
     XLSX.writeFile(wb, `Estoque_${competencia}.xlsx`);
