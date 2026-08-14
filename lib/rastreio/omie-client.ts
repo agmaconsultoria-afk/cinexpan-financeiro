@@ -1606,24 +1606,49 @@ export async function diagnosticoEstoqueProdutos(
       erros.push("produto: " + (e instanceof Error ? e.message : String(e)));
     }
 
-    // 2) Posição de estoque do produto em CADA data (para comparar se o custo
-    //    médio nCMC muda conforme a data — ou se o Omie devolve sempre o custo
-    //    ATUAL, ignorando a data histórica).
-    for (const data of datas) {
-      try {
-        const params: Record<string, unknown> = { dDataPosicao: data };
-        if (nCodProd) params.nIdProduto = Number(nCodProd);
-        else params.cCodigo = codigo;
-        const est = await callOmie<Record<string, unknown>>(cred, "estoque/consulta/", "PosicaoEstoque", params);
-        estoquePorData[data] = est;
-        cmcPorData[data] = num(pega(est as Record<string, unknown>, "nCMC", "cmc"));
-      } catch (e) {
-        erros.push(`estoque ${data}: ` + (e instanceof Error ? e.message : String(e)));
-      }
-      await sleep(250);
-    }
-
+    // A posição por data sai do ListarPosEstoque (é o único que aceita
+    // dDataPosicao). Preenchida abaixo, fora deste laço, num único scan por data.
     out.push({ codigo, nCodProd, produto, estoquePorData, cmcPorData, erro: erros.length ? erros.join(" | ") : undefined });
+  }
+
+  // 2) nCMC/saldo de cada código em CADA data, via ListarPosEstoque (aceita
+  //    dDataPosicao). Faz UM scan por data, parando quando achou todos os alvos,
+  //    para comparar se o custo médio muda conforme a data (histórico x atual).
+  const alvos = new Set(opcoes.codigos.map((c) => c.trim().toUpperCase()).filter(Boolean));
+  const porCodigo = new Map(out.map((o) => [o.codigo.toUpperCase(), o]));
+  for (const data of datas) {
+    let pagina = 1;
+    let totalPaginas = 1;
+    const achados = new Set<string>();
+    do {
+      let resp: { nTotPaginas?: number; produtos?: Record<string, unknown>[]; posicaoEstoque?: Record<string, unknown>[]; lista?: Record<string, unknown>[] };
+      try {
+        resp = await callOmie(cred, "estoque/consulta/", "ListarPosEstoque", {
+          nPagina: pagina,
+          nRegPorPagina: 500,
+          dDataPosicao: data,
+        });
+      } catch (e) {
+        for (const o of out) o.erro = [o.erro, `listar ${data}: ` + (e instanceof Error ? e.message : String(e))].filter(Boolean).join(" | ");
+        break;
+      }
+      totalPaginas = resp.nTotPaginas ?? 1;
+      const lista = (resp.produtos ?? resp.posicaoEstoque ?? resp.lista ?? []) as Record<string, unknown>[];
+      for (const e of lista) {
+        const cod = (pega(e, "cCodigo", "codigo", "cCodInt") ?? "").toString().toUpperCase();
+        if (alvos.has(cod)) {
+          const o = porCodigo.get(cod);
+          if (o) {
+            o.cmcPorData![data] = num(pega(e, "nCMC", "cmc"));
+            o.estoquePorData![data] = { nCMC: num(pega(e, "nCMC", "cmc")), saldo: num(pega(e, "nSaldo", "saldo")), fisico: num(pega(e, "fisico")) };
+          }
+          achados.add(cod);
+        }
+      }
+      pagina++;
+      if (achados.size >= alvos.size) break;
+      if (pagina <= totalPaginas) await sleep(150);
+    } while (pagina <= totalPaginas);
   }
   return out;
 }
