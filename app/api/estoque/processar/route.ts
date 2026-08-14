@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { exigirEdicao } from "@/lib/auth/session";
 import { lerCredenciais, analiseVendaMes, AnaliseVendaMes } from "@/lib/rastreio/omie-client";
 import { lerPosicaoEstoque, salvarAnaliseEstoque, EstoquePosicaoSnapshot } from "@/lib/rastreio/db";
-import { construirModelo, custoUnitGranel, ehArgila } from "@/lib/rastreio/custeio-granel";
+import { construirModelo, custoUnitGranel, ehArgila, volumeM3 } from "@/lib/rastreio/custeio-granel";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -12,6 +12,8 @@ interface ResultadoAnalise {
   vendas: number;
   estoqueCusto: number; // estoque avaliado a custo de granel (mesma régua do CMV)
   estoquePrecoVenda: number;
+  qtdeEstoque: number; // volume (m³) de argila em estoque
+  qtdeVendida: number; // volume (m³) de argila vendida no mês
   totalNFs: number;
   vendaSemVolume: number; // venda de produtos sem volume/custo identificável
 }
@@ -35,13 +37,18 @@ function calcularAnalise(venda: AnaliseVendaMes, snapshot: EstoquePosicaoSnapsho
   }
 
   // CMV = Σ (qtd vendida × custo unitário a granel). Vendas são só de argila.
+  // qtdeVendida em VOLUME (m³) p/ a Cobertura.
   let cmv = 0;
   let vendaSemVolume = 0;
+  let qtdeVendida = 0;
   for (const p of Object.values(venda.porProduto)) {
     const info = infoPorCodigo.get((p.codigo || "").toUpperCase());
     const r = custoUnitGranel(p.descricao, info?.unidade ?? "", info?.familia ?? "", info ? info.cmc : null, modelo);
     if (r.custoUnit <= 0) vendaSemVolume += p.venda;
     cmv += p.quantidade * r.custoUnit;
+    if (ehArgila(p.descricao, info?.familia ?? "")) {
+      qtdeVendida += p.quantidade * (volumeM3(p.descricao, info?.unidade ?? "") ?? 0);
+    }
   }
 
   // Estoque de ARGILA (produto acabado + em processo) — exclui matéria-prima e
@@ -49,17 +56,19 @@ function calcularAnalise(venda: AnaliseVendaMes, snapshot: EstoquePosicaoSnapsho
   const markupGlobal = cmv > 0 ? venda.vendas / cmv : 1;
   let estoqueCusto = 0;
   let estoquePrecoVenda = 0;
+  let qtdeEstoque = 0;
   for (const item of snapshot.itens) {
     if (!ehArgila(item.descricao, item.familia)) continue;
     const r = custoUnitGranel(item.descricao, item.unidade, item.familia, Number(item.cmcUnitario) || 0, modelo);
     const saldo = Number(item.quantidade) || 0;
     estoqueCusto += saldo * r.custoUnit;
+    qtdeEstoque += saldo * (volumeM3(item.descricao, item.unidade) ?? 0);
     const vp = venda.porProduto[(item.codigo || "").toUpperCase()];
     const precoUnit = vp && vp.quantidade > 0 ? vp.venda / vp.quantidade : r.custoUnit * markupGlobal;
     estoquePrecoVenda += saldo * precoUnit;
   }
 
-  return { cmv, vendas: venda.vendas, estoqueCusto, estoquePrecoVenda, totalNFs: venda.totalNFs, vendaSemVolume };
+  return { cmv, vendas: venda.vendas, estoqueCusto, estoquePrecoVenda, qtdeEstoque, qtdeVendida, totalNFs: venda.totalNFs, vendaSemVolume };
 }
 
 function validar(req: NextRequest) {
@@ -97,6 +106,8 @@ export async function POST(req: NextRequest) {
       vendas: r.vendas,
       estoqueCusto: r.estoqueCusto,
       estoquePrecoVenda: r.estoquePrecoVenda,
+      qtdeEstoque: r.qtdeEstoque,
+      qtdeVendida: r.qtdeVendida,
       totalNFs: r.totalNFs,
     });
     return NextResponse.json({ ok: true, competencia, ...r });

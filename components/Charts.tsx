@@ -152,12 +152,12 @@ export function RastreioRelatorioChart({ dados }: { dados: PontoRastreio[] }) {
   );
 }
 
-/** Estoque (a custo) x Venda por mês (barras) + giro (linha). */
+/** Estoque (a custo) x Venda por mês (barras) + markup (linha). */
 export interface PontoEstoqueVenda {
   rotulo: string;
   estoque: number;
   venda: number;
-  giro: number;
+  markup: number;
 }
 
 export function EstoqueVendaChart({ dados }: { dados: PontoEstoqueVenda[] }) {
@@ -176,14 +176,14 @@ export function EstoqueVendaChart({ dados }: { dados: PontoEstoqueVenda[] }) {
         <YAxis
           yAxisId="right"
           orientation="right"
-          tickFormatter={(v) => `${v.toFixed(1)}x`}
+          tickFormatter={(v) => `${v.toFixed(1)}×`}
           tick={{ fontSize: 12 }}
           stroke="#94a3b8"
           width={48}
         />
         <Tooltip
           formatter={(v: number, name: string) =>
-            name === "Giro" ? `${v.toFixed(2)}x` : formatarMoeda(v)
+            name === "Markup" ? `${v.toFixed(2)}×` : formatarMoeda(v)
           }
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -192,8 +192,8 @@ export function EstoqueVendaChart({ dados }: { dados: PontoEstoqueVenda[] }) {
         <Line
           yAxisId="right"
           type="monotone"
-          dataKey="giro"
-          name="Giro"
+          dataKey="markup"
+          name="Markup"
           stroke="#10b981"
           strokeWidth={2.5}
           dot={{ r: 3 }}

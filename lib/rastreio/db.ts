@@ -113,6 +113,9 @@ async function criarSchema(): Promise<void> {
       gerado_em            TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Quantidades em volume (m³) p/ a Cobertura = qtde estoque ÷ qtde vendida.
+  await pool.query(`ALTER TABLE estoque_analise ADD COLUMN IF NOT EXISTS qtde_estoque NUMERIC NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE estoque_analise ADD COLUMN IF NOT EXISTS qtde_vendida NUMERIC NOT NULL DEFAULT 0;`);
 
   // Seeds de faturamento/vendas PF (uma vez; nunca sobrescreve edições).
   await semearMapa("rastreio_faturamento", FATURAMENTO_SEED);
@@ -580,6 +583,8 @@ export interface AnaliseEstoqueMes {
   vendas: number;
   estoqueCusto: number;
   estoquePrecoVenda: number;
+  qtdeEstoque: number; // volume (m³) de argila em estoque
+  qtdeVendida: number; // volume (m³) de argila vendida no mês
   totalNFs: number;
   geradoEm: string;
 }
@@ -588,16 +593,18 @@ export async function salvarAnaliseEstoque(a: Omit<AnaliseEstoqueMes, "geradoEm"
   await ensureSchema();
   await getPool().query(
     `INSERT INTO estoque_analise
-       (competencia, cmv, vendas, estoque_custo, estoque_preco_venda, total_nfs, gerado_em)
-     VALUES ($1, $2, $3, $4, $5, $6, now())
+       (competencia, cmv, vendas, estoque_custo, estoque_preco_venda, qtde_estoque, qtde_vendida, total_nfs, gerado_em)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
      ON CONFLICT (competencia)
      DO UPDATE SET cmv = EXCLUDED.cmv,
                    vendas = EXCLUDED.vendas,
                    estoque_custo = EXCLUDED.estoque_custo,
                    estoque_preco_venda = EXCLUDED.estoque_preco_venda,
+                   qtde_estoque = EXCLUDED.qtde_estoque,
+                   qtde_vendida = EXCLUDED.qtde_vendida,
                    total_nfs = EXCLUDED.total_nfs,
                    gerado_em = now()`,
-    [a.competencia, a.cmv, a.vendas, a.estoqueCusto, a.estoquePrecoVenda, a.totalNFs]
+    [a.competencia, a.cmv, a.vendas, a.estoqueCusto, a.estoquePrecoVenda, a.qtdeEstoque, a.qtdeVendida, a.totalNFs]
   );
 }
 
@@ -609,10 +616,12 @@ export async function listarAnalisesEstoque(): Promise<AnaliseEstoqueMes[]> {
     vendas: string;
     estoque_custo: string;
     estoque_preco_venda: string;
+    qtde_estoque: string;
+    qtde_vendida: string;
     total_nfs: number;
     gerado_em: Date;
   }>(
-    `SELECT competencia, cmv, vendas, estoque_custo, estoque_preco_venda, total_nfs, gerado_em
+    `SELECT competencia, cmv, vendas, estoque_custo, estoque_preco_venda, qtde_estoque, qtde_vendida, total_nfs, gerado_em
      FROM estoque_analise ORDER BY competencia ASC`
   );
   return rows.map((r) => ({
@@ -621,6 +630,8 @@ export async function listarAnalisesEstoque(): Promise<AnaliseEstoqueMes[]> {
     vendas: Number(r.vendas),
     estoqueCusto: Number(r.estoque_custo),
     estoquePrecoVenda: Number(r.estoque_preco_venda),
+    qtdeEstoque: Number(r.qtde_estoque),
+    qtdeVendida: Number(r.qtde_vendida),
     totalNFs: Number(r.total_nfs),
     geradoEm: r.gerado_em instanceof Date ? r.gerado_em.toISOString() : String(r.gerado_em),
   }));
