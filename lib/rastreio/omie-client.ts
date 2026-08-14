@@ -1673,6 +1673,8 @@ export interface AnaliseVendaMes {
   cmv: number; // Σ nCMCTotal (custo da mercadoria vendida)
   totalNFs: number;
   porProduto: Record<string, VendaProdutoMes>; // código -> agregado
+  bonificacaoQtd: number; // Σ qCom de linhas com valor 0 (brinde/bonificação)
+  bonificacaoItens: number; // nº de linhas com valor 0 e quantidade > 0
   primeiroRegistroBruto?: unknown; // debug: 1ª NF crua (p/ conferir campos do item)
 }
 
@@ -1697,19 +1699,27 @@ export async function analiseVendaMes(
   const nfs = new Set<string>();
   let vendas = 0;
   let cmv = 0;
+  let bonificacaoQtd = 0;
+  let bonificacaoItens = 0;
   for (const it of itens) {
     const venda = Number(it.totalMercadoria) || 0;
     const custo = Number(it.custoItem) || 0; // nCMCTotal — NÃO é o custo da linha (não usar p/ CMV)
+    const qtd = Number(it.quantidade) || 0;
     vendas += venda;
     cmv += custo;
     if (it.nf) nfs.add(it.nf);
+    // Linha sem valor (brinde/bonificação/amostra): quantidade sem receita.
+    if (venda <= 0 && qtd > 0) {
+      bonificacaoQtd += qtd;
+      bonificacaoItens++;
+    }
     const cod = (it.codigoProduto || "").toString().toUpperCase() || `__${it.produto}`;
     const p = (porProduto[cod] ??= { codigo: it.codigoProduto || "", descricao: it.produto, quantidade: 0, venda: 0, custo: 0 });
-    p.quantidade += Number(it.quantidade) || 0;
+    p.quantidade += qtd;
     p.venda += venda;
     p.custo += custo;
   }
 
   // totalNFs = NFs de venda distintas do mês (não o total bruto do Omie).
-  return { competencia, vendas, cmv, totalNFs: nfs.size || totalNFs, porProduto, primeiroRegistroBruto };
+  return { competencia, vendas, cmv, totalNFs: nfs.size || totalNFs, porProduto, bonificacaoQtd, bonificacaoItens, primeiroRegistroBruto };
 }

@@ -126,21 +126,33 @@ export async function GET(req: NextRequest) {
     const r = calcularAnalise(venda, snapshot);
     const cmcMap = new Map<string, number>();
     for (const it of snapshot.itens) cmcMap.set((it.codigo || "").toUpperCase(), Number(it.cmcUnitario) || 0);
+    const round = (n: number) => Math.round(n * 10000) / 10000;
     const amostra = Object.values(venda.porProduto)
       .map((p) => {
         const cmc = cmcMap.get((p.codigo || "").toUpperCase()) ?? null;
+        const precoMedio = p.quantidade > 0 ? p.venda / p.quantidade : 0;
         return {
           codigo: p.codigo,
           descricao: p.descricao,
-          quantidade: p.quantidade,
-          venda: p.venda,
-          cmcUnitario: cmc,
-          custoCalc: cmc != null ? p.quantidade * cmc : null,
+          quantidade: round(p.quantidade),
+          venda: round(p.venda),
+          precoMedioVenda: round(precoMedio),
+          cmcUnitario: cmc != null ? round(cmc) : null,
+          custoCalc: cmc != null ? round(p.quantidade * cmc) : null,
+          markup: cmc != null && cmc > 0 ? round(precoMedio / cmc) : null,
         };
       })
       .sort((a, b) => (b.custoCalc ?? 0) - (a.custoCalc ?? 0))
-      .slice(0, 20);
-    return NextResponse.json({ ok: true, competencia, ...r, amostraPorProduto: amostra });
+      .slice(0, 24);
+    return NextResponse.json({
+      ok: true,
+      competencia,
+      ...r,
+      markupGlobal: r.cmv > 0 ? round(r.vendas / r.cmv) : null,
+      bonificacaoQtd: venda.bonificacaoQtd,
+      bonificacaoItens: venda.bonificacaoItens,
+      amostraPorProduto: amostra,
+    });
   } catch (e) {
     return NextResponse.json({ ok: false, erro: e instanceof Error ? e.message : "erro" }, { status: 502 });
   }
