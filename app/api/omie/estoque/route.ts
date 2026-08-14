@@ -28,6 +28,12 @@ export async function GET(req: NextRequest) {
   const competencia = searchParams.get("competencia");
   const debug = searchParams.get("debug") === "1";
   const incluirZerados = searchParams.get("zerados") === "1";
+  // ?codigos=0500,201506,1506 -> devolve os campos crus (estoque + cadastro)
+  // desses produtos para conferir de qual campo sai o custo médio da contabilidade.
+  const debugCodigos = (searchParams.get("codigos") ?? "")
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
   if (!competencia || !/^\d{4}-\d{2}$/.test(competencia)) {
     return NextResponse.json({ ok: false, erro: "Informe a competência (YYYY-MM)." }, { status: 400 });
   }
@@ -41,7 +47,7 @@ export async function GET(req: NextRequest) {
   const periodo = `${y} / ${p2(m)} (${MESES[m - 1]})`;
 
   try {
-    const res = await posicaoEstoque(cred, { dataPosicao, incluirZerados, debug });
+    const res = await posicaoEstoque(cred, { dataPosicao, incluirZerados, debug, debugCodigos });
     return NextResponse.json({
       ok: true,
       competencia,
@@ -50,6 +56,7 @@ export async function GET(req: NextRequest) {
       totalRegistros: res.totalRegistros,
       itens: res.itens.map((i) => ({ ...i, periodo })),
       ...(debug ? { amostraEstoque: res.amostraEstoque, amostraProduto: res.amostraProduto } : {}),
+      ...(debugCodigos.length ? { debugCampos: res.debugCampos } : {}),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro ao consultar a posição de estoque.";

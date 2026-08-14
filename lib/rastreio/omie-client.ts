@@ -1435,10 +1435,12 @@ function formatarNCM(v: unknown): string {
  */
 async function mapaProdutos(
   cred: OmieCredenciais,
-  maxPaginas = 200
-): Promise<{ porCodProd: Map<string, ProdMeta>; porCodigo: Map<string, ProdMeta>; amostra?: Record<string, unknown> }> {
+  maxPaginas = 200,
+  capturarRaw?: Set<string>
+): Promise<{ porCodProd: Map<string, ProdMeta>; porCodigo: Map<string, ProdMeta>; amostra?: Record<string, unknown>; rawPorCodigo: Map<string, Record<string, unknown>> }> {
   const porCodProd = new Map<string, ProdMeta>();
   const porCodigo = new Map<string, ProdMeta>();
+  const rawPorCodigo = new Map<string, Record<string, unknown>>();
   let amostra: Record<string, unknown> | undefined;
   let pagina = 1;
   let total = 1;
@@ -1468,11 +1470,14 @@ async function mapaProdutos(
       const cod = (pega(p, "codigo_produto", "nCodProd", "codigo_produto_omie") ?? "").toString();
       if (cod) porCodProd.set(cod, meta);
       if (meta.codigo) porCodigo.set(meta.codigo, meta);
+      if (capturarRaw && meta.codigo && capturarRaw.has(meta.codigo.toUpperCase())) {
+        rawPorCodigo.set(meta.codigo.toUpperCase(), p);
+      }
     }
     pagina++;
     if (pagina <= total && pagina <= maxPaginas) await sleep(120);
   } while (pagina <= total && pagina <= maxPaginas);
-  return { porCodProd, porCodigo, amostra };
+  return { porCodProd, porCodigo, amostra, rawPorCodigo };
 }
 
 /**
@@ -1481,12 +1486,14 @@ async function mapaProdutos(
  */
 export async function posicaoEstoque(
   cred: OmieCredenciais,
-  opcoes: { dataPosicao: string; incluirZerados?: boolean; debug?: boolean; maxPaginas?: number }
-): Promise<{ itens: PosicaoEstoqueItem[]; totalRegistros: number; amostraEstoque?: Record<string, unknown>; amostraProduto?: Record<string, unknown> }> {
+  opcoes: { dataPosicao: string; incluirZerados?: boolean; debug?: boolean; maxPaginas?: number; debugCodigos?: string[] }
+): Promise<{ itens: PosicaoEstoqueItem[]; totalRegistros: number; amostraEstoque?: Record<string, unknown>; amostraProduto?: Record<string, unknown>; debugCampos?: Record<string, unknown>[] }> {
   const maxPaginas = opcoes.maxPaginas ?? 200;
-  const prod = await mapaProdutos(cred);
+  const alvos = new Set((opcoes.debugCodigos ?? []).map((c) => c.trim().toUpperCase()).filter(Boolean));
+  const prod = await mapaProdutos(cred, maxPaginas, alvos.size ? alvos : undefined);
 
   const itens: PosicaoEstoqueItem[] = [];
+  const debugCampos: Record<string, unknown>[] = [];
   let amostraEstoque: Record<string, unknown> | undefined;
   let totalRegistros = 0;
   let pagina = 1;
@@ -1519,6 +1526,19 @@ export async function posicaoEstoque(
       const codigo = (pega(e, "cCodigo", "codigo", "cCodInt") ?? "").toString();
       const meta = prod.porCodProd.get(codProd) ?? prod.porCodigo.get(codigo);
       const tipoSped = meta?.tipoSped || "";
+      const codigoAtual = (meta?.codigo || codigo || codProd);
+      // Debug de campos: para os códigos pedidos, devolve TODOS os campos crus
+      // do estoque e do cadastro, para identificar de qual campo sai o custo
+      // médio de referência da contabilidade.
+      if (alvos.size && codigoAtual && alvos.has(codigoAtual.toUpperCase())) {
+        debugCampos.push({
+          codigo: codigoAtual,
+          saldo,
+          cmcUsado: cmc,
+          estoqueCampos: e,
+          produtoCampos: prod.rawPorCodigo.get(codigoAtual.toUpperCase()) ?? null,
+        });
+      }
       // Só entram na posição de estoque para contabilidade os tipos SPED:
       // 01-Matéria Prima, 02-Embalagem, 03-Produto em Processo, 04-Produto Acabado.
       const cod2 = tipoSped.slice(0, 2);
@@ -1549,5 +1569,6 @@ export async function posicaoEstoque(
     totalRegistros,
     amostraEstoque: opcoes.debug ? amostraEstoque : undefined,
     amostraProduto: opcoes.debug ? prod.amostra : undefined,
+    debugCampos: alvos.size ? debugCampos : undefined,
   };
 }
