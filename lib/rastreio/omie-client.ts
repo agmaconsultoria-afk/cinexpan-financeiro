@@ -1520,7 +1520,10 @@ export async function posicaoEstoque(
       // 01-Matéria Prima, 02-Embalagem, 03-Produto em Processo, 04-Produto Acabado.
       const cod2 = tipoSped.slice(0, 2);
       if (!["01", "02", "03", "04"].includes(cod2)) continue;
-      const cmcTotal = num(pega(e, "nValorEstoque", "valor_estoque")) || saldo * cmc;
+      // CMC Total = Quantidade × CMC Unitário (padrão do relatório contábil).
+      // NÃO usar o nValorEstoque do Omie: ele carrega precisão cheia e diverge
+      // do arredondamento contábil (qtd × custo médio exibido).
+      const cmcTotal = saldo * cmc;
       itens.push({
         codigo: meta?.codigo || codigo || codProd,
         descricao: meta?.descricao || (pega(e, "cDescricao", "descricao") ?? "").toString(),
