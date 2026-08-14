@@ -100,6 +100,19 @@ async function criarSchema(): Promise<void> {
       gerado_em     TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Análise de venda do mês (giro a custo e a preço de venda): CMV, vendas e o
+  // estoque avaliado a custo e a preço de venda, por competência.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS estoque_analise (
+      competencia          TEXT PRIMARY KEY,
+      cmv                  NUMERIC NOT NULL DEFAULT 0,
+      vendas               NUMERIC NOT NULL DEFAULT 0,
+      estoque_custo        NUMERIC NOT NULL DEFAULT 0,
+      estoque_preco_venda  NUMERIC NOT NULL DEFAULT 0,
+      total_nfs            INTEGER NOT NULL DEFAULT 0,
+      gerado_em            TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 
   // Seeds de faturamento/vendas PF (uma vez; nunca sobrescreve edições).
   await semearMapa("rastreio_faturamento", FATURAMENTO_SEED);
@@ -557,6 +570,60 @@ export async function lerPosicaoEstoque(competencia: string): Promise<EstoquePos
     geradoEm: r.gerado_em instanceof Date ? r.gerado_em.toISOString() : String(r.gerado_em),
     itens: r.itens ?? [],
   };
+}
+
+// ----- Análise de venda do mês (giro a custo / a preço de venda) -----
+
+export interface AnaliseEstoqueMes {
+  competencia: string;
+  cmv: number;
+  vendas: number;
+  estoqueCusto: number;
+  estoquePrecoVenda: number;
+  totalNFs: number;
+  geradoEm: string;
+}
+
+export async function salvarAnaliseEstoque(a: Omit<AnaliseEstoqueMes, "geradoEm">): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    `INSERT INTO estoque_analise
+       (competencia, cmv, vendas, estoque_custo, estoque_preco_venda, total_nfs, gerado_em)
+     VALUES ($1, $2, $3, $4, $5, $6, now())
+     ON CONFLICT (competencia)
+     DO UPDATE SET cmv = EXCLUDED.cmv,
+                   vendas = EXCLUDED.vendas,
+                   estoque_custo = EXCLUDED.estoque_custo,
+                   estoque_preco_venda = EXCLUDED.estoque_preco_venda,
+                   total_nfs = EXCLUDED.total_nfs,
+                   gerado_em = now()`,
+    [a.competencia, a.cmv, a.vendas, a.estoqueCusto, a.estoquePrecoVenda, a.totalNFs]
+  );
+}
+
+export async function listarAnalisesEstoque(): Promise<AnaliseEstoqueMes[]> {
+  await ensureSchema();
+  const { rows } = await getPool().query<{
+    competencia: string;
+    cmv: string;
+    vendas: string;
+    estoque_custo: string;
+    estoque_preco_venda: string;
+    total_nfs: number;
+    gerado_em: Date;
+  }>(
+    `SELECT competencia, cmv, vendas, estoque_custo, estoque_preco_venda, total_nfs, gerado_em
+     FROM estoque_analise ORDER BY competencia ASC`
+  );
+  return rows.map((r) => ({
+    competencia: r.competencia,
+    cmv: Number(r.cmv),
+    vendas: Number(r.vendas),
+    estoqueCusto: Number(r.estoque_custo),
+    estoquePrecoVenda: Number(r.estoque_preco_venda),
+    totalNFs: Number(r.total_nfs),
+    geradoEm: r.gerado_em instanceof Date ? r.gerado_em.toISOString() : String(r.gerado_em),
+  }));
 }
 
 export async function lerHistoricoOmie(limite = 50): Promise<HistoricoProcessamento[]> {

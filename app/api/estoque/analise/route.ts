@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { exigirSessao } from "@/lib/auth/session";
-import { listarPosicoesEstoque, lerTudo } from "@/lib/rastreio/db";
+import { listarPosicoesEstoque, listarAnalisesEstoque, lerTudo } from "@/lib/rastreio/db";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,11 @@ export async function GET() {
   if (sessao instanceof NextResponse) return sessao;
 
   try {
-    const [posicoes, dados] = await Promise.all([listarPosicoesEstoque(), lerTudo()]);
+    const [posicoes, analises, dados] = await Promise.all([
+      listarPosicoesEstoque(),
+      listarAnalisesEstoque(),
+      lerTudo(),
+    ]);
 
     // Venda do mês: prioriza o faturamento apurado do Omie; cai para o manual.
     const faturamento: Record<string, number> = {};
@@ -27,6 +31,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       posicoes,
+      analises,
       faturamento,
       vendasPF: dados.vendasPF,
     });

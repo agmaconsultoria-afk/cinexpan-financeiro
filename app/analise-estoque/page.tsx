@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { BarChart3, RefreshCw, PackageSearch } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BarChart3, RefreshCw, PackageSearch, Play } from "lucide-react";
 import { PageHeader } from "@/components/ui";
 import { EstoqueVendaChart, PontoEstoqueVenda } from "@/components/Charts";
-import { formatarMoeda, rotuloMes, formatarData } from "@/lib/format";
+import { formatarMoeda, rotuloMes } from "@/lib/format";
 
 interface PosicaoResumo {
   competencia: string;
@@ -15,26 +15,38 @@ interface PosicaoResumo {
   geradoEm: string;
 }
 
-interface LinhaAnalise {
+interface AnaliseMes {
+  competencia: string;
+  cmv: number;
+  vendas: number;
+  estoqueCusto: number;
+  estoquePrecoVenda: number;
+  totalNFs: number;
+  geradoEm: string;
+}
+
+interface Linha {
   competencia: string;
   dataPosicao: string;
-  totalItens: number;
-  estoqueFinal: number;
-  estoqueMedio: number;
-  venda: number;
-  giro: number; // Venda ÷ Estoque médio (aprox.)
-  coberturaDias: number; // dias de venda cobertos pelo estoque médio
-  geradoEm: string;
+  estoqueCusto: number;
+  estoquePrecoVenda: number | null;
+  cmv: number | null;
+  vendas: number;
+  giroCusto: number | null;
+  giroVenda: number | null;
+  processado: boolean;
 }
 
 export default function AnaliseEstoquePage() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [posicoes, setPosicoes] = useState<PosicaoResumo[]>([]);
+  const [analises, setAnalises] = useState<AnaliseMes[]>([]);
   const [faturamento, setFaturamento] = useState<Record<string, number>>({});
   const [vendasPF, setVendasPF] = useState<Record<string, number>>({});
+  const [processando, setProcessando] = useState<string | null>(null);
 
-  async function carregar() {
+  const carregar = useCallback(async () => {
     setCarregando(true);
     setErro("");
     try {
@@ -45,6 +57,7 @@ export default function AnaliseEstoquePage() {
         return;
       }
       setPosicoes(data.posicoes ?? []);
+      setAnalises(data.analises ?? []);
       setFaturamento(data.faturamento ?? {});
       setVendasPF(data.vendasPF ?? {});
     } catch {
@@ -52,42 +65,71 @@ export default function AnaliseEstoquePage() {
     } finally {
       setCarregando(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     carregar();
-  }, []);
+  }, [carregar]);
 
-  const linhas = useMemo<LinhaAnalise[]>(() => {
+  async function processar(competencia: string) {
+    setProcessando(competencia);
+    setErro("");
+    try {
+      const res = await fetch(`/api/estoque/processar?competencia=${competencia}`, { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) {
+        setErro(data.erro ?? "Erro ao processar o mês.");
+        return;
+      }
+      await carregar();
+    } catch {
+      setErro("Erro de conexão ao processar. Tente novamente.");
+    } finally {
+      setProcessando(null);
+    }
+  }
+
+  const linhas = useMemo<Linha[]>(() => {
     const ordenadas = [...posicoes].sort((a, b) => a.competencia.localeCompare(b.competencia));
+    const mapA = new Map(analises.map((a) => [a.competencia, a]));
     return ordenadas.map((p, i) => {
-      const anterior = ordenadas[i - 1];
-      const estoqueFinal = p.totalCmc;
-      const estoqueMedio = anterior ? (anterior.totalCmc + estoqueFinal) / 2 : estoqueFinal;
-      const venda = (faturamento[p.competencia] || 0) + (vendasPF[p.competencia] || 0);
-      const giro = estoqueMedio > 0 ? venda / estoqueMedio : 0;
-      const coberturaDias = venda > 0 ? (estoqueMedio / venda) * 30 : 0;
+      const ant = ordenadas[i - 1];
+      const a = mapA.get(p.competencia);
+      const aAnt = ant ? mapA.get(ant.competencia) : undefined;
+
+      const estoqueCusto = p.totalCmc;
+      const estoqueMedioCusto = ant ? (ant.totalCmc + estoqueCusto) / 2 : estoqueCusto;
+
+      const estoquePrecoVenda = a ? a.estoquePrecoVenda : null;
+      const estoqueMedioVenda =
+        a && aAnt ? (aAnt.estoquePrecoVenda + a.estoquePrecoVenda) / 2 : a ? a.estoquePrecoVenda : null;
+
+      const vendas = a ? a.vendas : (faturamento[p.competencia] || 0) + (vendasPF[p.competencia] || 0);
+
+      const giroCusto = a && estoqueMedioCusto > 0 ? a.cmv / estoqueMedioCusto : null;
+      const giroVenda = a && estoqueMedioVenda && estoqueMedioVenda > 0 ? a.vendas / estoqueMedioVenda : null;
+
       return {
         competencia: p.competencia,
         dataPosicao: p.dataPosicao,
-        totalItens: p.totalItens,
-        estoqueFinal,
-        estoqueMedio,
-        venda,
-        giro,
-        coberturaDias,
-        geradoEm: p.geradoEm,
+        estoqueCusto,
+        estoquePrecoVenda,
+        cmv: a ? a.cmv : null,
+        vendas,
+        giroCusto,
+        giroVenda,
+        processado: Boolean(a),
       };
     });
-  }, [posicoes, faturamento, vendasPF]);
+  }, [posicoes, analises, faturamento, vendasPF]);
 
   const dadosGrafico = useMemo<PontoEstoqueVenda[]>(
     () =>
       linhas.map((l) => ({
         rotulo: rotuloMes(l.competencia),
-        estoque: l.estoqueFinal,
-        venda: l.venda,
-        giro: l.giro,
+        estoque: l.estoqueCusto,
+        venda: l.vendas,
+        giro: l.giroCusto ?? 0,
       })),
     [linhas]
   );
@@ -96,7 +138,7 @@ export default function AnaliseEstoquePage() {
     <div>
       <PageHeader
         titulo="Análise de Estoque × Venda"
-        subtitulo="Giro de estoque e custo médio a partir das posições salvas"
+        subtitulo="Giro de estoque (a custo e a preço de venda) e custo médio a partir das posições salvas"
         acoes={
           <button
             onClick={carregar}
@@ -135,30 +177,43 @@ export default function AnaliseEstoquePage() {
 
           <div className="card overflow-hidden">
             <div className="overflow-auto">
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[1000px] text-sm">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-slate-500">
                     <th className="px-3 py-2.5 font-medium">Competência</th>
-                    <th className="px-3 py-2.5 font-medium">Posição</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Itens</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Estoque final (custo)</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Estoque médio</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Venda do mês</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Giro</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Cobertura (dias)</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Estoque (custo)</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Estoque (preço venda)</th>
+                    <th className="px-3 py-2.5 text-right font-medium">CMV</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Vendas</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Giro (custo)</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Giro (venda)</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Ação</th>
                   </tr>
                 </thead>
                 <tbody>
                   {linhas.map((l) => (
                     <tr key={l.competencia} className="border-b border-slate-100 last:border-0">
                       <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">{rotuloMes(l.competencia)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{l.dataPosicao}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">{l.totalItens}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{formatarMoeda(l.estoqueFinal)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{formatarMoeda(l.estoqueMedio)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.venda > 0 ? formatarMoeda(l.venda) : "—"}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-800">{l.venda > 0 ? `${l.giro.toFixed(2)}x` : "—"}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">{l.coberturaDias > 0 ? `${l.coberturaDias.toFixed(0)}` : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{formatarMoeda(l.estoqueCusto)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.estoquePrecoVenda != null ? formatarMoeda(l.estoquePrecoVenda) : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.cmv != null ? formatarMoeda(l.cmv) : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.vendas > 0 ? formatarMoeda(l.vendas) : "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-brand-700">{l.giroCusto != null ? `${l.giroCusto.toFixed(2)}x` : "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800">{l.giroVenda != null ? `${l.giroVenda.toFixed(2)}x` : "—"}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          onClick={() => processar(l.competencia)}
+                          disabled={processando !== null}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {processando === l.competencia ? (
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Play className="h-3 w-3" />
+                          )}
+                          {l.processado ? "Reprocessar" : "Processar"}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -168,18 +223,17 @@ export default function AnaliseEstoquePage() {
 
           <div className="mt-4 space-y-1 text-xs text-slate-400">
             <p>
-              <strong className="text-slate-500">Estoque médio</strong> = (estoque do mês anterior + estoque do mês) ÷ 2,
-              a partir das posições salvas.
+              <strong className="text-slate-500">Giro (custo)</strong> = CMV ÷ Estoque médio a custo. CMV e vendas vêm
+              das NFs de venda do mês (item a item, direto do Omie). É o giro contábil.
             </p>
             <p>
-              <strong className="text-slate-500">Giro</strong> = Venda do mês ÷ Estoque médio (aproximado: usa a venda/faturamento;
-              o giro contábil preciso usa o CMV — custo da mercadoria vendida — que definiremos na próxima etapa).
+              <strong className="text-slate-500">Giro (venda)</strong> = Vendas ÷ Estoque médio avaliado a preço de venda
+              (saldo × preço médio praticado no mês por produto).
             </p>
             <p>
-              <strong className="text-slate-500">Cobertura (dias)</strong> = Estoque médio ÷ (Venda do mês ÷ 30):
-              quantos dias de venda o estoque cobre.
+              <strong className="text-slate-500">Estoque médio</strong> = (mês anterior + mês) ÷ 2. Clique em
+              <strong className="text-slate-500"> Processar</strong> para calcular CMV/vendas do mês (busca as NFs no Omie).
             </p>
-            <p>Atualizado a partir das posições gravadas em cada execução. Última carga: {formatarData(new Date().toISOString())}.</p>
           </div>
         </>
       )}

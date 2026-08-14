@@ -740,10 +740,12 @@ export interface NotaFiscalItem {
   clienteNome: string;
   clienteDoc: string;
   produto: string;
+  codigoProduto?: string; // prod.cCodigo/cProd (código do produto)
   quantidade: number;
   unidade: string;
   valorUnitario: number;
   totalMercadoria: number;
+  custoItem?: number; // prod.nCMCTotal — custo (CMV) do item vendido
   operacao: string;
   natOp: string;
   finNFe: string;
@@ -1121,11 +1123,13 @@ export async function listarNotasFiscais(
               dataEmissao, nf: nfNum, serie,
               clienteNome: clienteNome || clienteDoc, clienteDoc,
               produto: (pega(prod, "xProd", "cDescricao") ?? "").toString(),
+              codigoProduto: (pega(prod, "cCodigo", "cProd", "codigo") ?? "").toString(),
               quantidade: num(pega(prod, "qCom") ?? 0),
               unidade: (pega(prod, "uCom") ?? "").toString(),
               valorUnitario: num(pega(prod, "vUnCom") ?? 0),
               // nCMCTotal é CMC (custo), vProd é o valor real do produto
               totalMercadoria: num(pega(prod, "vProd", "vTotItem", "nCMCTotal") ?? 0),
+              custoItem: num(pega(prod, "nCMCTotal", "vTotItemCusto", "nValorCusto") ?? 0),
               operacao: operacaoNF, natOp, finNFe, situacao, tags: "", cfop, categoria, nIdPedido, nIdReceb, devolvido, devParcial,
             });
           }
@@ -1651,4 +1655,57 @@ export async function diagnosticoEstoqueProdutos(
     } while (pagina <= totalPaginas);
   }
   return out;
+}
+
+// ===================== Análise de venda do mês (giro / CMV) =====================
+
+export interface VendaProdutoMes {
+  codigo: string;
+  descricao: string;
+  quantidade: number; // qtd vendida no mês
+  venda: number; // Σ vProd (valor de venda)
+  custo: number; // Σ nCMCTotal (CMV)
+}
+
+export interface AnaliseVendaMes {
+  competencia: string;
+  vendas: number; // Σ vProd das NFs de venda do mês
+  cmv: number; // Σ nCMCTotal (custo da mercadoria vendida)
+  totalNFs: number;
+  porProduto: Record<string, VendaProdutoMes>; // código -> agregado
+}
+
+/**
+ * Agrega as NFs de venda de UMA competência por produto: quantidade, valor de
+ * venda (vProd) e custo/CMV (nCMCTotal). Base para o giro (a custo e a preço de
+ * venda). Usa a janela ESTRITA do mês, igual ao faturamento apurado.
+ */
+export async function analiseVendaMes(
+  cred: OmieCredenciais,
+  competencia: string
+): Promise<AnaliseVendaMes> {
+  const [y, m] = competencia.split("-").map(Number);
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const ultimoDia = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const dataDe = `01/${p2(m)}/${y}`;
+  const dataAte = `${p2(ultimoDia)}/${p2(m)}/${y}`;
+
+  const { itens, totalNFs } = await listarNotasFiscais(cred, { dataDe, dataAte });
+
+  const porProduto: Record<string, VendaProdutoMes> = {};
+  let vendas = 0;
+  let cmv = 0;
+  for (const it of itens) {
+    const venda = Number(it.totalMercadoria) || 0;
+    const custo = Number(it.custoItem) || 0;
+    vendas += venda;
+    cmv += custo;
+    const cod = (it.codigoProduto || "").toString().toUpperCase() || `__${it.produto}`;
+    const p = (porProduto[cod] ??= { codigo: it.codigoProduto || "", descricao: it.produto, quantidade: 0, venda: 0, custo: 0 });
+    p.quantidade += Number(it.quantidade) || 0;
+    p.venda += venda;
+    p.custo += custo;
+  }
+
+  return { competencia, vendas, cmv, totalNFs, porProduto };
 }
