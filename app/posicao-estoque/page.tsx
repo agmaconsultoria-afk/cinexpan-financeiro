@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { Boxes, Download, Search, FileX } from "lucide-react";
 import { PageHeader } from "@/components/ui";
@@ -43,6 +43,18 @@ export default function PosicaoEstoquePage() {
   const [erro, setErro] = useState("");
   const [itens, setItens] = useState<EstoqueItem[] | null>(null);
   const [periodo, setPeriodo] = useState("");
+  const [procSegundos, setProcSegundos] = useState(0);
+
+  // Cronômetro do processamento (status em percentual, estilo sincronismo).
+  useEffect(() => {
+    if (!carregando) {
+      setProcSegundos(0);
+      return;
+    }
+    const inicio = Date.now();
+    const id = setInterval(() => setProcSegundos(Math.floor((Date.now() - inicio) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [carregando]);
 
   async function executar() {
     setCarregando(true);
@@ -112,14 +124,57 @@ export default function PosicaoEstoquePage() {
 
       {erro && <div className="mb-4 rounded-lg bg-rose-50 p-4 text-sm text-rose-700">{erro}</div>}
 
-      {carregando && (
-        <div className="card flex flex-col items-center gap-4 py-20 text-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
-          <p className="text-sm text-slate-400">
-            Consultando o estoque e o cadastro de produtos no Omie… pode levar alguns minutos.
-          </p>
-        </div>
-      )}
+      {carregando && (() => {
+        const etapas = [
+          "Consultando o cadastro de produtos no Omie…",
+          "Consultando a posição de estoque na data…",
+          "Cruzando dados e montando o relatório…",
+        ];
+        const limites = [0, 35, 70];
+        const etapaAtual = limites.reduce((acc, t, i) => (procSegundos >= t ? i : acc), 0);
+        const pct = Math.min(95, Math.round((procSegundos / 90) * 95));
+        const mm = String(Math.floor(procSegundos / 60)).padStart(2, "0");
+        const ss = String(procSegundos % 60).padStart(2, "0");
+        return (
+          <div className="card card-pad">
+            <div className="flex items-start gap-3">
+              <Boxes className="mt-0.5 h-5 w-5 shrink-0 animate-pulse text-brand-600" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-slate-800">Processando posição de estoque…</span>
+                  <span className="text-sm tabular-nums text-slate-500">{mm}:{ss}</span>
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  <span className="text-2xl font-bold tabular-nums text-brand-700">{pct}%</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-brand-500 transition-all duration-1000 ease-linear"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {etapas.map((txt, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      {i < etapaAtual ? (
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">✓</span>
+                      ) : i === etapaAtual ? (
+                        <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+                      ) : (
+                        <span className="h-4 w-4 shrink-0 rounded-full border-2 border-slate-200" />
+                      )}
+                      <span className={i <= etapaAtual ? "text-slate-700" : "text-slate-400"}>{txt}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-slate-400">
+                  Pode levar alguns minutos (o cadastro de produtos é grande). Não feche a página.
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {!itens && !carregando && !erro && (
         <div className="card flex flex-col items-center gap-4 py-20 text-center">
