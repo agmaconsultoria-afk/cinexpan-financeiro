@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { Boxes, Download, Search, FileX } from "lucide-react";
 import { PageHeader } from "@/components/ui";
@@ -33,8 +33,44 @@ const CABECALHO = [
   "Período",
 ];
 
+// Agrupamento contábil (cópia fiel do relatório): Produto Acabado agrega os
+// tipos SPED 04-Produto Acabado e 03-Produto em Processo; depois Embalagens
+// (02) e Matéria Prima (01). A ordem dos tipos dentro de cada grupo define a
+// ordem de exibição das linhas (04 antes de 03).
+const GRUPOS: { label: string; tipos: string[] }[] = [
+  { label: "Produto Acabado", tipos: ["04", "03"] },
+  { label: "Embalagens", tipos: ["02"] },
+  { label: "Matéria Prima", tipos: ["01"] },
+];
+
 function fmtQtd(n: number): string {
   return n.toLocaleString("pt-BR", { maximumFractionDigits: 6 });
+}
+
+interface GrupoEstoque {
+  label: string;
+  linhas: EstoqueItem[];
+  totalQtd: number;
+  totalCMC: number;
+}
+
+function agruparPorSped(itens: EstoqueItem[]): GrupoEstoque[] {
+  return GRUPOS.map((g) => {
+    const linhas = itens
+      .filter((i) => g.tipos.includes((i.tipoSped || "").slice(0, 2)))
+      .sort((a, b) => {
+        const ta = g.tipos.indexOf((a.tipoSped || "").slice(0, 2));
+        const tb = g.tipos.indexOf((b.tipoSped || "").slice(0, 2));
+        if (ta !== tb) return ta - tb;
+        return a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true });
+      });
+    return {
+      label: g.label,
+      linhas,
+      totalQtd: linhas.reduce((s, i) => s + i.quantidade, 0),
+      totalCMC: linhas.reduce((s, i) => s + i.cmcTotal, 0),
+    };
+  }).filter((g) => g.linhas.length > 0);
 }
 
 export default function PosicaoEstoquePage() {
@@ -78,10 +114,27 @@ export default function PosicaoEstoquePage() {
 
   function exportar() {
     if (!itens) return;
-    const linhas = itens.map((i) => [
-      i.codigo, i.descricao, i.ncm, i.tipoSped, i.familia, i.unidade,
-      i.quantidade, i.cmcUnitario, i.cmcTotal, i.periodo,
-    ]);
+    const grupos = agruparPorSped(itens);
+    // Linha de subtotal/total: rótulo alinhado sob "Unidade", com Quantidade
+    // e CMC Total preenchidos (mesma posição do relatório impresso).
+    const linhaTotal = (rotulo: string, qtd: number, cmc: number) =>
+      ["", "", "", "", "", rotulo, qtd, "", cmc, ""];
+
+    const linhas: (string | number)[][] = [];
+    for (const g of grupos) {
+      for (const i of g.linhas) {
+        linhas.push([
+          i.codigo, i.descricao, i.ncm, i.tipoSped, i.familia, i.unidade,
+          i.quantidade, i.cmcUnitario, i.cmcTotal, i.periodo,
+        ]);
+      }
+      linhas.push(linhaTotal(`Total ${g.label}`, g.totalQtd, g.totalCMC));
+    }
+    linhas.push([]);
+    const totalGeralQtd = grupos.reduce((s, g) => s + g.totalQtd, 0);
+    const totalGeralCMC = grupos.reduce((s, g) => s + g.totalCMC, 0);
+    linhas.push(linhaTotal("TOTAL ESTOQUE", totalGeralQtd, totalGeralCMC));
+
     const ws = XLSX.utils.aoa_to_sheet([CABECALHO, ...linhas]);
     ws["!cols"] = [
       { wch: 16 }, { wch: 52 }, { wch: 12 }, { wch: 22 }, { wch: 20 },
@@ -92,7 +145,9 @@ export default function PosicaoEstoquePage() {
     XLSX.writeFile(wb, `Estoque_${competencia}.xlsx`);
   }
 
-  const totalCMC = itens?.reduce((s, i) => s + i.cmcTotal, 0) ?? 0;
+  const grupos = itens ? agruparPorSped(itens) : [];
+  const totalCMC = grupos.reduce((s, g) => s + g.totalCMC, 0);
+  const totalQtd = grupos.reduce((s, g) => s + g.totalQtd, 0);
 
   return (
     <div>
@@ -205,38 +260,50 @@ export default function PosicaoEstoquePage() {
             <div className="card overflow-hidden">
               <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full min-w-[1000px] text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-50">
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="px-3 py-2.5 font-medium">Código</th>
-                      <th className="px-3 py-2.5 font-medium">Descrição</th>
-                      <th className="px-3 py-2.5 font-medium">NCM</th>
-                      <th className="px-3 py-2.5 font-medium">Tipo SPED</th>
-                      <th className="px-3 py-2.5 font-medium">Família</th>
-                      <th className="px-3 py-2.5 font-medium">Un.</th>
-                      <th className="px-3 py-2.5 text-right font-medium">Quantidade</th>
-                      <th className="px-3 py-2.5 text-right font-medium">CMC Unit.</th>
-                      <th className="px-3 py-2.5 text-right font-medium">CMC Total</th>
+                  <thead className="sticky top-0 z-10 bg-amber-100">
+                    <tr className="border-b border-amber-200 text-left text-slate-700">
+                      <th className="px-3 py-2.5 font-semibold">Código do Produto</th>
+                      <th className="px-3 py-2.5 font-semibold">Descrição (completa)</th>
+                      <th className="px-3 py-2.5 font-semibold">Código NCM</th>
+                      <th className="px-3 py-2.5 font-semibold">Tipo do Produto (SPED)</th>
+                      <th className="px-3 py-2.5 font-semibold">Família de Produto</th>
+                      <th className="px-3 py-2.5 font-semibold">Unidade</th>
+                      <th className="px-3 py-2.5 text-right font-semibold">Quantidade</th>
+                      <th className="px-3 py-2.5 text-right font-semibold">CMC Unitário</th>
+                      <th className="px-3 py-2.5 text-right font-semibold">CMC Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {itens.map((i, idx) => (
-                      <tr key={`${i.codigo}-${idx}`} className="border-b border-slate-100 last:border-0">
-                        <td className="whitespace-nowrap px-3 py-1.5 font-medium text-slate-700">{i.codigo}</td>
-                        <td className="max-w-[340px] truncate px-3 py-1.5 text-slate-600" title={i.descricao}>{i.descricao}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-slate-500">{i.ncm}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-slate-500">{i.tipoSped}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-slate-500">{i.familia}</td>
-                        <td className="px-3 py-1.5 text-slate-500">{i.unidade}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{fmtQtd(i.quantidade)}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-600">{i.cmcUnitario.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-medium text-slate-700">{formatarMoeda(i.cmcTotal)}</td>
-                      </tr>
+                    {grupos.map((g) => (
+                      <Fragment key={g.label}>
+                        {g.linhas.map((i, idx) => (
+                          <tr key={`${i.codigo}-${idx}`} className="border-b border-slate-100">
+                            <td className="whitespace-nowrap px-3 py-1.5 font-medium text-slate-700">{i.codigo}</td>
+                            <td className="max-w-[340px] truncate px-3 py-1.5 text-slate-600" title={i.descricao}>{i.descricao}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 text-slate-500">{i.ncm}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 text-slate-500">{i.tipoSped}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 text-slate-500">{i.familia}</td>
+                            <td className="px-3 py-1.5 text-slate-500">{i.unidade}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{fmtQtd(i.quantidade)}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-600">{i.cmcUnitario.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-medium text-slate-700">{formatarMoeda(i.cmcTotal)}</td>
+                          </tr>
+                        ))}
+                        <tr className="border-y border-amber-200 bg-amber-50 font-semibold text-slate-800">
+                          <td className="px-3 py-2 text-right" colSpan={6}>Total {g.label}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{fmtQtd(g.totalQtd)}</td>
+                          <td className="px-3 py-2" />
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatarMoeda(g.totalCMC)}</td>
+                        </tr>
+                      </Fragment>
                     ))}
                   </tbody>
-                  <tfoot className="sticky bottom-0 bg-slate-50">
-                    <tr className="border-t border-slate-200 font-semibold text-slate-800">
-                      <td className="px-3 py-2.5" colSpan={8}>Total ({itens.length})</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{formatarMoeda(totalCMC)}</td>
+                  <tfoot className="sticky bottom-0 bg-amber-200">
+                    <tr className="border-t-2 border-amber-300 font-bold text-slate-900">
+                      <td className="px-3 py-2.5 text-right" colSpan={6}>TOTAL ESTOQUE</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{fmtQtd(totalQtd)}</td>
+                      <td className="px-3 py-2.5" />
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">{formatarMoeda(totalCMC)}</td>
                     </tr>
                   </tfoot>
                 </table>
