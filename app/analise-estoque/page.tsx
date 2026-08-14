@@ -20,6 +20,7 @@ interface AnaliseMes {
   cmv: number;
   vendas: number;
   estoqueCusto: number;
+  estoqueEmProcesso: number;
   estoquePrecoVenda: number;
   qtdeEstoque: number;
   qtdeVendida: number;
@@ -29,10 +30,11 @@ interface AnaliseMes {
 
 interface Linha {
   competencia: string;
-  estoqueCusto: number;
+  estoqueCusto: number; // acabado (04)
+  estoqueEmProcesso: number | null; // em processo (03)
   cmv: number | null;
   vendas: number;
-  giro: number | null; // Estoque (custo) ÷ CMV
+  giro: number | null; // Estoque acabado (custo) ÷ CMV
   cobertura: number | null; // Qtde estoque ÷ Qtde vendida
   markup: number | null; // Vendas ÷ CMV
   processado: boolean;
@@ -99,12 +101,13 @@ export default function AnaliseEstoquePage() {
       const vendas = a ? a.vendas : (faturamento[p.competencia] || 0) + (vendasPF[p.competencia] || 0);
       return {
         competencia: p.competencia,
-        estoqueCusto,
+        estoqueCusto, // acabado
+        estoqueEmProcesso: a ? a.estoqueEmProcesso : null,
         cmv: a ? a.cmv : null,
         vendas,
-        // Giro = Estoque (custo) ÷ CMV.
+        // Giro = Estoque acabado (custo) ÷ CMV.
         giro: a && a.cmv > 0 ? a.estoqueCusto / a.cmv : null,
-        // Cobertura = Qtde em estoque ÷ Qtde vendida (volume m³).
+        // Cobertura = Qtde em estoque (acabado) ÷ Qtde vendida (volume m³).
         cobertura: a && a.qtdeVendida > 0 ? a.qtdeEstoque / a.qtdeVendida : null,
         // Markup = Vendas ÷ CMV.
         markup: a && a.cmv > 0 ? a.vendas / a.cmv : null,
@@ -167,11 +170,12 @@ export default function AnaliseEstoquePage() {
 
           <div className="card overflow-hidden">
             <div className="overflow-auto">
-              <table className="w-full min-w-[960px] text-sm">
+              <table className="w-full min-w-[1060px] text-sm">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-slate-500">
                     <th className="px-3 py-2.5 font-medium">Competência</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Estoque (custo)</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Estoque acabado (custo)</th>
+                    <th className="px-3 py-2.5 text-right font-medium">Em processo</th>
                     <th className="px-3 py-2.5 text-right font-medium">CMV</th>
                     <th className="px-3 py-2.5 text-right font-medium">Vendas</th>
                     <th className="px-3 py-2.5 text-right font-medium">Giro</th>
@@ -185,6 +189,7 @@ export default function AnaliseEstoquePage() {
                     <tr key={l.competencia} className="border-b border-slate-100 last:border-0">
                       <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">{rotuloMes(l.competencia)}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{formatarMoeda(l.estoqueCusto)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">{l.estoqueEmProcesso != null ? formatarMoeda(l.estoqueEmProcesso) : "—"}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.cmv != null ? formatarMoeda(l.cmv) : "—"}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.vendas > 0 ? formatarMoeda(l.vendas) : "—"}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-semibold text-brand-700">{l.giro != null ? `${l.giro.toFixed(2)}` : "—"}</td>
@@ -212,12 +217,13 @@ export default function AnaliseEstoquePage() {
           </div>
 
           <div className="mt-4 space-y-1 text-xs text-slate-400">
-            <p><strong className="text-slate-500">Giro</strong> = Estoque (custo) ÷ CMV — meses de estoque que o custo vendido no mês representa.</p>
-            <p><strong className="text-slate-500">Cobertura</strong> = Qtde em estoque ÷ Qtde vendida (em volume, m³) — meses de venda que o estoque cobre.</p>
+            <p><strong className="text-slate-500">Giro</strong> = Estoque acabado (custo) ÷ CMV — meses de estoque que o custo vendido no mês representa.</p>
+            <p><strong className="text-slate-500">Cobertura</strong> = Qtde em estoque (acabado) ÷ Qtde vendida (em volume, m³) — meses de venda que o estoque cobre.</p>
             <p><strong className="text-slate-500">Markup</strong> = Vendas ÷ CMV.</p>
             <p>
-              CMV, estoque e quantidades consideram só a <strong className="text-slate-500">argila</strong> (produto acabado + em processo),
-              custeada a granel (matéria-prima) por volume. Clique em <strong className="text-slate-500">Processar</strong> para calcular o mês (busca as NFs no Omie).
+              Giro e Cobertura consideram só o <strong className="text-slate-500">produto acabado (04)</strong>. O
+              <strong className="text-slate-500"> Em processo</strong> (argila a granel não classificada, WIP) é mostrado à parte, sem entrar no giro.
+              Tudo é argila custeada a granel por volume. Clique em <strong className="text-slate-500">Processar</strong> para calcular o mês (busca as NFs no Omie).
             </p>
           </div>
         </>

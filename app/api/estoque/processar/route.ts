@@ -10,9 +10,10 @@ export const maxDuration = 300;
 interface ResultadoAnalise {
   cmv: number; // CMV a custo de granel (matéria-prima)
   vendas: number;
-  estoqueCusto: number; // estoque avaliado a custo de granel (mesma régua do CMV)
+  estoqueCusto: number; // estoque de produto ACABADO (04) a custo de granel
+  estoqueEmProcesso: number; // estoque de produto EM PROCESSO (03), à parte
   estoquePrecoVenda: number;
-  qtdeEstoque: number; // volume (m³) de argila em estoque
+  qtdeEstoque: number; // volume (m³) de argila ACABADA em estoque
   qtdeVendida: number; // volume (m³) de argila vendida no mês
   totalNFs: number;
   vendaSemVolume: number; // venda de produtos sem volume/custo identificável
@@ -51,24 +52,32 @@ function calcularAnalise(venda: AnaliseVendaMes, snapshot: EstoquePosicaoSnapsho
     }
   }
 
-  // Estoque de ARGILA (produto acabado + em processo) — exclui matéria-prima e
-  // embalagem. Custo a granel e preço de venda na mesma régua do CMV.
+  // Estoque de ARGILA — separado em ACABADO (04) e EM PROCESSO (03). Giro/
+  // Cobertura usam só o acabado; o em processo (WIP) fica à parte.
   const markupGlobal = cmv > 0 ? venda.vendas / cmv : 1;
-  let estoqueCusto = 0;
+  let estoqueCusto = 0; // acabado (04)
+  let estoqueEmProcesso = 0; // em processo (03)
   let estoquePrecoVenda = 0;
-  let qtdeEstoque = 0;
+  let qtdeEstoque = 0; // volume acabado
   for (const item of snapshot.itens) {
     if (!ehArgila(item.descricao, item.familia)) continue;
     const r = custoUnitGranel(item.descricao, item.unidade, item.familia, Number(item.cmcUnitario) || 0, modelo);
     const saldo = Number(item.quantidade) || 0;
-    estoqueCusto += saldo * r.custoUnit;
+    const custoTotal = saldo * r.custoUnit;
+    const emProcesso = (item.tipoSped || "").slice(0, 2) === "03";
+    if (emProcesso) {
+      estoqueEmProcesso += custoTotal;
+      continue;
+    }
+    // Produto acabado (04)
+    estoqueCusto += custoTotal;
     qtdeEstoque += saldo * (volumeM3(item.descricao, item.unidade) ?? 0);
     const vp = venda.porProduto[(item.codigo || "").toUpperCase()];
     const precoUnit = vp && vp.quantidade > 0 ? vp.venda / vp.quantidade : r.custoUnit * markupGlobal;
     estoquePrecoVenda += saldo * precoUnit;
   }
 
-  return { cmv, vendas: venda.vendas, estoqueCusto, estoquePrecoVenda, qtdeEstoque, qtdeVendida, totalNFs: venda.totalNFs, vendaSemVolume };
+  return { cmv, vendas: venda.vendas, estoqueCusto, estoqueEmProcesso, estoquePrecoVenda, qtdeEstoque, qtdeVendida, totalNFs: venda.totalNFs, vendaSemVolume };
 }
 
 function validar(req: NextRequest) {
@@ -105,6 +114,7 @@ export async function POST(req: NextRequest) {
       cmv: r.cmv,
       vendas: r.vendas,
       estoqueCusto: r.estoqueCusto,
+      estoqueEmProcesso: r.estoqueEmProcesso,
       estoquePrecoVenda: r.estoquePrecoVenda,
       qtdeEstoque: r.qtdeEstoque,
       qtdeVendida: r.qtdeVendida,
