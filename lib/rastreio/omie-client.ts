@@ -1673,6 +1673,7 @@ export interface AnaliseVendaMes {
   cmv: number; // Σ nCMCTotal (custo da mercadoria vendida)
   totalNFs: number;
   porProduto: Record<string, VendaProdutoMes>; // código -> agregado
+  primeiroRegistroBruto?: unknown; // debug: 1ª NF crua (p/ conferir campos do item)
 }
 
 /**
@@ -1690,7 +1691,7 @@ export async function analiseVendaMes(
   const dataDe = `01/${p2(m)}/${y}`;
   const dataAte = `${p2(ultimoDia)}/${p2(m)}/${y}`;
 
-  const { itens, totalNFs } = await listarNotasFiscais(cred, { dataDe, dataAte });
+  const { itens, totalNFs, primeiroRegistroBruto } = await listarNotasFiscais(cred, { dataDe, dataAte });
 
   const porProduto: Record<string, VendaProdutoMes> = {};
   let vendas = 0;
@@ -1707,5 +1708,5 @@ export async function analiseVendaMes(
     p.custo += custo;
   }
 
-  return { competencia, vendas, cmv, totalNFs, porProduto };
+  return { competencia, vendas, cmv, totalNFs, porProduto, primeiroRegistroBruto };
 }

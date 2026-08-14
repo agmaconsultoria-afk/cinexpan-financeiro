@@ -7,6 +7,40 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
+ * GET /api/estoque/processar?competencia=YYYY-MM  (diagnóstico, NÃO grava)
+ * Devolve os totais + amostra por produto (código, qtd, venda, custo) e a
+ * primeira NF crua, para conferir de qual campo do item sai o custo (CMV).
+ */
+export async function GET(req: NextRequest) {
+  const sessao = await exigirEdicao();
+  if (sessao instanceof NextResponse) return sessao;
+  const cred = lerCredenciais();
+  if (!cred) return NextResponse.json({ ok: false, erro: "Credenciais do Omie não configuradas." }, { status: 400 });
+  const competencia = new URL(req.url).searchParams.get("competencia");
+  if (!competencia || !/^\d{4}-\d{2}$/.test(competencia)) {
+    return NextResponse.json({ ok: false, erro: "Informe a competência (YYYY-MM)." }, { status: 400 });
+  }
+  try {
+    const venda = await analiseVendaMes(cred, competencia);
+    const amostra = Object.values(venda.porProduto)
+      .sort((a, b) => b.custo - a.custo)
+      .slice(0, 15);
+    return NextResponse.json({
+      ok: true,
+      competencia,
+      vendas: venda.vendas,
+      cmv: venda.cmv,
+      totalNFs: venda.totalNFs,
+      qtdProdutos: Object.keys(venda.porProduto).length,
+      amostraPorProduto: amostra,
+      primeiroRegistroBruto: venda.primeiroRegistroBruto,
+    });
+  } catch (e) {
+    return NextResponse.json({ ok: false, erro: e instanceof Error ? e.message : "erro" }, { status: 502 });
+  }
+}
+
+/**
  * POST /api/estoque/processar?competencia=YYYY-MM
  * Calcula a base do giro do mês:
  *  - CMV e Vendas (Σ das NFs de venda do mês, item a item).
