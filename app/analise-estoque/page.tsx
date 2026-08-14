@@ -97,8 +97,10 @@ export default function AnaliseEstoquePage() {
       const a = mapA.get(p.competencia);
       const aAnt = ant ? mapA.get(ant.competencia) : undefined;
 
-      const estoqueCusto = p.totalCmc;
-      const estoqueMedioCusto = ant ? (ant.totalCmc + estoqueCusto) / 2 : estoqueCusto;
+      // Estoque a custo na régua do CMV (granel) quando processado; senão o CMC do Omie.
+      const estoqueCusto = a ? a.estoqueCusto : p.totalCmc;
+      const estoqueMedioCusto =
+        a && aAnt ? (aAnt.estoqueCusto + a.estoqueCusto) / 2 : a ? a.estoqueCusto : estoqueCusto;
 
       const estoquePrecoVenda = a ? a.estoquePrecoVenda : null;
       const estoqueMedioVenda =
@@ -223,8 +225,12 @@ export default function AnaliseEstoquePage() {
 
           <div className="mt-4 space-y-1 text-xs text-slate-400">
             <p>
-              <strong className="text-slate-500">Giro (custo)</strong> = CMV ÷ Estoque médio a custo. CMV e vendas vêm
-              das NFs de venda do mês (item a item, direto do Omie). É o giro contábil.
+              <strong className="text-slate-500">Custo a granel:</strong> CMV e estoque são valorados pelo custo do granel
+              (matéria-prima) por volume — o empacotado = volume × custo do granel da mesma argila. Remove o custo de
+              ensacamento inflado do custo médio do Omie. (A tela Posição de Estoque continua no custo médio oficial do Omie.)
+            </p>
+            <p>
+              <strong className="text-slate-500">Giro (custo)</strong> = CMV ÷ Estoque médio a custo (granel) — mesma régua nos dois lados.
             </p>
             <p>
               <strong className="text-slate-500">Giro (venda)</strong> = Vendas ÷ Estoque médio avaliado a preço de venda
