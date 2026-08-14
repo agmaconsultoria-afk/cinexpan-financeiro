@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FileSpreadsheet,
   Printer,
@@ -181,8 +181,20 @@ export default function RastreioFaturamentoPage() {
 
   const [aviso, setAviso] = useState<string | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
+  const [sincSegundos, setSincSegundos] = useState(0);
   // Mês a sincronizar do Omie (independente do que já está carregado).
   const [mesOmie, setMesOmie] = useState(() => new Date().toISOString().slice(0, 7));
+
+  // Cronômetro do sincronismo (para o status de processamento).
+  useEffect(() => {
+    if (!sincronizando) {
+      setSincSegundos(0);
+      return;
+    }
+    const inicio = Date.now();
+    const id = setInterval(() => setSincSegundos(Math.floor((Date.now() - inicio) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [sincronizando]);
   // Drill-down: célula clicada (coluna + mês; mês null = total da competência).
   const [detalhe, setDetalhe] = useState<{ col: Coluna; mes: string | null } | null>(null);
   // Diagnóstico contas a receber x faturamento. O limite do gap (em pontos
@@ -633,7 +645,59 @@ export default function RastreioFaturamentoPage() {
         </div>
       )}
 
-      {aviso && (
+      {/* Status de processamento do sincronismo */}
+      {sincronizando && (() => {
+        const etapas = [
+          "Consultando contas a receber e recebimentos no Omie…",
+          "Buscando as NFs de venda do mês…",
+          "Amarrando títulos ao faturamento e gravando…",
+        ];
+        const limites = [0, 30, 65]; // segundos aproximados por etapa
+        const etapaAtual = limites.reduce((acc, t, i) => (sincSegundos >= t ? i : acc), 0);
+        const mm = String(Math.floor(sincSegundos / 60)).padStart(2, "0");
+        const ss = String(sincSegundos % 60).padStart(2, "0");
+        const largura = Math.min(95, 8 + (sincSegundos / 90) * 90);
+        return (
+          <div className="no-print mb-4 card card-pad">
+            <div className="flex items-start gap-3">
+              <Cloud className="mt-0.5 h-5 w-5 shrink-0 animate-pulse text-brand-600" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-slate-800">
+                    Sincronizando {rotuloMesAno(mesOmie)}…
+                  </span>
+                  <span className="text-sm tabular-nums text-slate-500">{mm}:{ss}</span>
+                </div>
+                <div className="mt-2.5 space-y-1.5">
+                  {etapas.map((txt, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      {i < etapaAtual ? (
+                        <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+                      ) : i === etapaAtual ? (
+                        <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+                      ) : (
+                        <span className="h-4 w-4 shrink-0 rounded-full border-2 border-slate-200" />
+                      )}
+                      <span className={i <= etapaAtual ? "text-slate-700" : "text-slate-400"}>{txt}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-brand-500 transition-all duration-1000 ease-linear"
+                    style={{ width: `${largura}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-slate-400">
+                  Pode levar alguns minutos em meses grandes. Não feche a página.
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {aviso && !sincronizando && (
         <div className="no-print mb-4 flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 p-3 text-sm text-brand-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           {aviso}
