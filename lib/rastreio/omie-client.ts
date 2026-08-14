@@ -1572,3 +1572,51 @@ export async function posicaoEstoque(
     debugCampos: alvos.size ? debugCampos : undefined,
   };
 }
+
+/**
+ * Diagnóstico RÁPIDO de custo por produto: em vez de varrer todo o catálogo e
+ * toda a posição de estoque (lento), consulta cada produto direto no Omie
+ * (ConsultarProduto + PosicaoEstoque por data) e devolve TODOS os campos crus.
+ * Serve para identificar de qual campo do Omie sai o custo médio da
+ * contabilidade. Poucas chamadas -> responde em segundos.
+ */
+export async function diagnosticoEstoqueProdutos(
+  cred: OmieCredenciais,
+  opcoes: { dataPosicao: string; codigos: string[] }
+): Promise<
+  { codigo: string; nCodProd?: string; produto?: unknown; estoque?: unknown; erro?: string }[]
+> {
+  const out: { codigo: string; nCodProd?: string; produto?: unknown; estoque?: unknown; erro?: string }[] = [];
+  for (const codigoRaw of opcoes.codigos) {
+    const codigo = codigoRaw.trim();
+    if (!codigo) continue;
+    let produto: unknown = null;
+    let estoque: unknown = null;
+    let nCodProd = "";
+    const erros: string[] = [];
+
+    // 1) Cadastro do produto (traz nCodProd/nIdProduto e campos do cadastro).
+    try {
+      const p = await callOmie<Record<string, unknown>>(cred, "geral/produtos/", "ConsultarProduto", { codigo });
+      produto = p;
+      nCodProd = (pega(p, "codigo_produto", "nCodProd", "nIdProduto") ?? "").toString();
+    } catch (e) {
+      erros.push("produto: " + (e instanceof Error ? e.message : String(e)));
+    }
+
+    // 2) Posição de estoque do produto na data (traz saldo, custo médio,
+    //    valor de estoque etc.). Tenta por nIdProduto; se não houver, por código.
+    try {
+      const params: Record<string, unknown> = { dDataPosicao: opcoes.dataPosicao, cExibeTodos: "S" };
+      if (nCodProd) params.nIdProduto = Number(nCodProd);
+      else params.cCodIntProduto = codigo;
+      estoque = await callOmie<Record<string, unknown>>(cred, "estoque/consulta/", "PosicaoEstoque", params);
+    } catch (e) {
+      erros.push("estoque: " + (e instanceof Error ? e.message : String(e)));
+    }
+
+    out.push({ codigo, nCodProd, produto, estoque, erro: erros.length ? erros.join(" | ") : undefined });
+    await sleep(300);
+  }
+  return out;
+}

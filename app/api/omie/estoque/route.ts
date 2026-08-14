@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { lerCredenciais, posicaoEstoque } from "@/lib/rastreio/omie-client";
+import { lerCredenciais, posicaoEstoque, diagnosticoEstoqueProdutos } from "@/lib/rastreio/omie-client";
 import { exigirEdicao } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +47,14 @@ export async function GET(req: NextRequest) {
   const periodo = `${y} / ${p2(m)} (${MESES[m - 1]})`;
 
   try {
+    // Diagnóstico rápido: se vier ?codigos=..., consulta só esses produtos
+    // direto no Omie (rápido) em vez de varrer todo o catálogo/estoque (lento,
+    // estava estourando o tempo da requisição no navegador).
+    if (debugCodigos.length) {
+      const diag = await diagnosticoEstoqueProdutos(cred, { dataPosicao, codigos: debugCodigos });
+      return NextResponse.json({ ok: true, competencia, dataPosicao, periodo, debugCampos: diag });
+    }
+
     const res = await posicaoEstoque(cred, { dataPosicao, incluirZerados, debug, debugCodigos });
     return NextResponse.json({
       ok: true,
