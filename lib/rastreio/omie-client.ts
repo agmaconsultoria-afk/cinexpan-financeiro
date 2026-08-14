@@ -1516,8 +1516,10 @@ export async function posicaoEstoque(
       const codigo = (pega(e, "cCodigo", "codigo", "cCodInt") ?? "").toString();
       const meta = prod.porCodProd.get(codProd) ?? prod.porCodigo.get(codigo);
       const tipoSped = meta?.tipoSped || "";
-      // "99-Outras" não entra na posição de estoque para contabilidade.
-      if (tipoSped.startsWith("99")) continue;
+      // Só entram na posição de estoque para contabilidade os tipos SPED:
+      // 01-Matéria Prima, 02-Embalagem, 03-Produto em Processo, 04-Produto Acabado.
+      const cod2 = tipoSped.slice(0, 2);
+      if (!["01", "02", "03", "04"].includes(cod2)) continue;
       const cmcTotal = num(pega(e, "nValorEstoque", "valor_estoque")) || saldo * cmc;
       itens.push({
         codigo: meta?.codigo || codigo || codProd,
