@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { exigirEdicao } from "@/lib/auth/session";
 import { lerCredenciais, analiseVendaMes, AnaliseVendaMes } from "@/lib/rastreio/omie-client";
 import { lerPosicaoEstoque, salvarAnaliseEstoque, EstoquePosicaoSnapshot } from "@/lib/rastreio/db";
-import { construirModelo, custoUnitGranel } from "@/lib/rastreio/custeio-granel";
+import { construirModelo, custoUnitGranel, ehArgila } from "@/lib/rastreio/custeio-granel";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -25,40 +25,38 @@ interface ResultadoAnalise {
  */
 function calcularAnalise(venda: AnaliseVendaMes, snapshot: EstoquePosicaoSnapshot): ResultadoAnalise {
   const modelo = construirModelo(snapshot.itens);
-  const infoPorCodigo = new Map<string, { unidade: string; cmc: number; descricao: string }>();
+  const infoPorCodigo = new Map<string, { unidade: string; familia: string; cmc: number }>();
   for (const it of snapshot.itens) {
     infoPorCodigo.set((it.codigo || "").toUpperCase(), {
       unidade: it.unidade,
+      familia: it.familia,
       cmc: Number(it.cmcUnitario) || 0,
-      descricao: it.descricao,
     });
   }
 
-  // CMV = Σ (qtd vendida × custo unitário a granel).
+  // CMV = Σ (qtd vendida × custo unitário a granel). Vendas são só de argila.
   let cmv = 0;
   let vendaSemVolume = 0;
   for (const p of Object.values(venda.porProduto)) {
     const info = infoPorCodigo.get((p.codigo || "").toUpperCase());
-    const r = custoUnitGranel(p.descricao, info?.unidade ?? "", info ? info.cmc : null, modelo);
+    const r = custoUnitGranel(p.descricao, info?.unidade ?? "", info?.familia ?? "", info ? info.cmc : null, modelo);
     if (r.custoUnit <= 0) vendaSemVolume += p.venda;
     cmv += p.quantidade * r.custoUnit;
   }
 
-  // Estoque avaliado na MESMA régua (custo de granel).
-  let estoqueCusto = 0;
-  for (const item of snapshot.itens) {
-    const r = custoUnitGranel(item.descricao, item.unidade, Number(item.cmcUnitario) || 0, modelo);
-    estoqueCusto += (Number(item.quantidade) || 0) * r.custoUnit;
-  }
-
-  // Estoque avaliado a preço de venda (mix do próprio estoque).
+  // Estoque de ARGILA (produto acabado + em processo) — exclui matéria-prima e
+  // embalagem. Custo a granel e preço de venda na mesma régua do CMV.
   const markupGlobal = cmv > 0 ? venda.vendas / cmv : 1;
+  let estoqueCusto = 0;
   let estoquePrecoVenda = 0;
   for (const item of snapshot.itens) {
+    if (!ehArgila(item.descricao, item.familia)) continue;
+    const r = custoUnitGranel(item.descricao, item.unidade, item.familia, Number(item.cmcUnitario) || 0, modelo);
+    const saldo = Number(item.quantidade) || 0;
+    estoqueCusto += saldo * r.custoUnit;
     const vp = venda.porProduto[(item.codigo || "").toUpperCase()];
-    const precoUnit =
-      vp && vp.quantidade > 0 ? vp.venda / vp.quantidade : (Number(item.cmcUnitario) || 0) * markupGlobal;
-    estoquePrecoVenda += (Number(item.quantidade) || 0) * precoUnit;
+    const precoUnit = vp && vp.quantidade > 0 ? vp.venda / vp.quantidade : r.custoUnit * markupGlobal;
+    estoquePrecoVenda += saldo * precoUnit;
   }
 
   return { cmv, vendas: venda.vendas, estoqueCusto, estoquePrecoVenda, totalNFs: venda.totalNFs, vendaSemVolume };
@@ -124,13 +122,13 @@ export async function GET(req: NextRequest) {
     const venda = await analiseVendaMes(cred, competencia);
     const r = calcularAnalise(venda, snapshot);
     const modelo = construirModelo(snapshot.itens);
-    const infoPorCodigo = new Map<string, { unidade: string; cmc: number }>();
-    for (const it of snapshot.itens) infoPorCodigo.set((it.codigo || "").toUpperCase(), { unidade: it.unidade, cmc: Number(it.cmcUnitario) || 0 });
+    const infoPorCodigo = new Map<string, { unidade: string; familia: string; cmc: number }>();
+    for (const it of snapshot.itens) infoPorCodigo.set((it.codigo || "").toUpperCase(), { unidade: it.unidade, familia: it.familia, cmc: Number(it.cmcUnitario) || 0 });
     const round = (n: number) => Math.round(n * 10000) / 10000;
     const amostra = Object.values(venda.porProduto)
       .map((p) => {
         const info = infoPorCodigo.get((p.codigo || "").toUpperCase());
-        const c = custoUnitGranel(p.descricao, info?.unidade ?? "", info ? info.cmc : null, modelo);
+        const c = custoUnitGranel(p.descricao, info?.unidade ?? "", info?.familia ?? "", info ? info.cmc : null, modelo);
         const precoMedio = p.quantidade > 0 ? p.venda / p.quantidade : 0;
         return {
           codigo: p.codigo,

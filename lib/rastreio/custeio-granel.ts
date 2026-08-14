@@ -14,12 +14,21 @@
 export interface ItemCusto {
   descricao: string;
   unidade: string;
+  familia: string;
   cmcUnitario: number;
 }
 
 export interface ModeloCustoGranel {
   granelPorTipo: Map<string, number>; // tipo de argila -> custo do granel (R$/m³)
   granelGlobal: number; // média dos granéis (fallback)
+}
+
+/** É produto de ARGILA EXPANDIDA (acabado/em processo) — não matéria-prima nem embalagem. */
+export function ehArgila(descricao: string, familia: string): boolean {
+  const d = (descricao || "").toUpperCase();
+  const f = (familia || "").toUpperCase();
+  if (f === "ARGILA EXPANDIDA") return true;
+  return /ARGILA\s+EXPANDIDA/.test(d);
 }
 
 /** É argila solta/granel (matéria-prima) — não empacotada. Big bag é empacotado. */
@@ -57,6 +66,7 @@ export function construirModelo(itens: ItemCusto[]): ModeloCustoGranel {
   const granelPorTipo = new Map<string, number>();
   const valores: number[] = [];
   for (const it of itens) {
+    if (!ehArgila(it.descricao, it.familia)) continue;
     if (!ehGranel(it.descricao, it.unidade)) continue;
     const c = Number(it.cmcUnitario) || 0;
     if (c <= 0) continue;
@@ -75,15 +85,21 @@ export interface CustoUnitResultado {
   tipo: string;
 }
 
-/** Custo unitário "a granel por volume" de um produto. */
+/** Custo unitário "a granel por volume" de um produto de argila. */
 export function custoUnitGranel(
   descricao: string,
   unidade: string,
+  familia: string,
   cmcProprio: number | null,
   modelo: ModeloCustoGranel
 ): CustoUnitResultado {
   const tipo = tipoArgila(descricao);
   const vol = volumeM3(descricao, unidade);
+
+  // Não-argila (matéria-prima, embalagem): custeio a granel não se aplica.
+  if (!ehArgila(descricao, familia)) {
+    return { custoUnit: cmcProprio ?? 0, base: "nao-argila", volumeM3: vol, tipo };
+  }
 
   if (ehGranel(descricao, unidade)) {
     // Matéria-prima solta: usa o próprio custo médio; se faltar, o granel do tipo/global.
