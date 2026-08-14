@@ -21,6 +21,7 @@ import {
   Eye,
   EyeOff,
   Receipt,
+  Boxes,
 } from "lucide-react";
 
 const NAV = [
@@ -28,6 +29,7 @@ const NAV = [
   { href: "/rastreio-faturamento", label: "Rastreio de Faturamento", icon: Radar },
   { href: "/lancar-faturamento", label: "Lançar Faturamento", icon: PencilLine },
   { href: "/faturamento-nf", label: "Faturamento por NF", icon: Receipt },
+  { href: "/posicao-estoque", label: "Posição de Estoque", icon: Boxes },
   { href: "/fluxo-caixa", label: "Fluxo de Caixa", icon: TrendingUp },
   { href: "/dre", label: "DRE", icon: FileSpreadsheet },
   { href: "/relatorios", label: "Relatórios", icon: FileText },

@@ -1382,3 +1382,161 @@ export async function listarContasReceber(
     truncadoMF: enriquecimento?.truncadoMF,
   };
 }
+
+// ===================== Posição de Estoque (contabilidade) =====================
+
+export interface PosicaoEstoqueItem {
+  codigo: string; // código/SKU do produto
+  descricao: string; // descrição completa
+  ncm: string; // "6806.20.00"
+  tipoSped: string; // "04-Produto Acabado"
+  familia: string; // "ARGILA EXPANDIDA"
+  unidade: string; // "SC", "M3"…
+  quantidade: number; // saldo físico na data
+  cmcUnitario: number; // custo médio contábil unitário
+  cmcTotal: number; // quantidade × cmcUnitario
+}
+
+// Código SPED do tipo de item (tipoItem no Omie) -> rótulo do relatório.
+const TIPO_SPED: Record<string, string> = {
+  "00": "00-Mercadoria para Revenda",
+  "01": "01-Matéria Prima",
+  "02": "02-Embalagem",
+  "03": "03-Produto em Processo",
+  "04": "04-Produto Acabado",
+  "05": "05-Subproduto",
+  "06": "06-Produto Intermediário",
+  "07": "07-Material de Uso e Consumo",
+  "08": "08-Ativo Imobilizado",
+  "09": "09-Serviços",
+  "10": "10-Outros Insumos",
+  "99": "99-Outras",
+};
+
+interface ProdMeta {
+  codigo: string;
+  descricao: string;
+  ncm: string;
+  tipoSped: string;
+  familia: string;
+  unidade: string;
+}
+
+/** Formata NCM "68062000" -> "6806.20.00". */
+function formatarNCM(v: unknown): string {
+  const s = (v ?? "").toString().replace(/\D/g, "");
+  if (s.length === 8) return `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)}`;
+  return (v ?? "").toString();
+}
+
+/**
+ * Cadastro de produtos: mapa (por nCodProd E por código) com NCM, tipo SPED,
+ * família, unidade e descrição. A posição de estoque só traz saldo + custo.
+ */
+async function mapaProdutos(
+  cred: OmieCredenciais,
+  maxPaginas = 200
+): Promise<{ porCodProd: Map<string, ProdMeta>; porCodigo: Map<string, ProdMeta>; amostra?: Record<string, unknown> }> {
+  const porCodProd = new Map<string, ProdMeta>();
+  const porCodigo = new Map<string, ProdMeta>();
+  let amostra: Record<string, unknown> | undefined;
+  let pagina = 1;
+  let total = 1;
+  do {
+    const resp = await callOmie<{
+      total_de_paginas?: number;
+      produto_servico_cadastro?: Record<string, unknown>[];
+    }>(cred, "geral/produtos/", "ListarProdutos", {
+      pagina,
+      registros_por_pagina: 500,
+      apenas_importado_api: "N",
+      filtrar_apenas_omiepdv: "N",
+    });
+    total = resp.total_de_paginas ?? 1;
+    const lista = resp.produto_servico_cadastro ?? [];
+    if (!amostra && lista.length > 0) amostra = lista[0];
+    for (const p of lista) {
+      const tipoRaw = (pega(p, "tipoItem", "tipo_item", "cTipoItem") ?? "").toString().padStart(2, "0");
+      const meta: ProdMeta = {
+        codigo: (pega(p, "codigo", "cCodigo", "codigo_produto_integracao") ?? "").toString(),
+        descricao: (pega(p, "descricao", "cDescricao") ?? "").toString(),
+        ncm: formatarNCM(pega(p, "ncm", "cNCM")),
+        tipoSped: TIPO_SPED[tipoRaw] ?? (tipoRaw ? `${tipoRaw}-Outros` : ""),
+        familia: (pega(p, "descricao_familia", "familia", "cDescrFamilia") ?? "").toString(),
+        unidade: (pega(p, "unidade", "cUnidade") ?? "").toString(),
+      };
+      const cod = (pega(p, "codigo_produto", "nCodProd", "codigo_produto_omie") ?? "").toString();
+      if (cod) porCodProd.set(cod, meta);
+      if (meta.codigo) porCodigo.set(meta.codigo, meta);
+    }
+    pagina++;
+    if (pagina <= total && pagina <= maxPaginas) await sleep(120);
+  } while (pagina <= total && pagina <= maxPaginas);
+  return { porCodProd, porCodigo, amostra };
+}
+
+/**
+ * Posição de Estoque na data informada (dd/mm/aaaa), cruzada com o cadastro de
+ * produtos, no layout do relatório de contabilidade. Só itens com saldo != 0.
+ */
+export async function posicaoEstoque(
+  cred: OmieCredenciais,
+  opcoes: { dataPosicao: string; incluirZerados?: boolean; debug?: boolean; maxPaginas?: number }
+): Promise<{ itens: PosicaoEstoqueItem[]; totalRegistros: number; amostraEstoque?: Record<string, unknown>; amostraProduto?: Record<string, unknown> }> {
+  const maxPaginas = opcoes.maxPaginas ?? 200;
+  const prod = await mapaProdutos(cred);
+
+  const itens: PosicaoEstoqueItem[] = [];
+  let amostraEstoque: Record<string, unknown> | undefined;
+  let totalRegistros = 0;
+  let pagina = 1;
+  let totalPaginas = 1;
+  do {
+    const resp = await callOmie<{
+      nTotPaginas?: number;
+      nTotRegistros?: number;
+      produtos?: Record<string, unknown>[];
+      posicaoEstoque?: Record<string, unknown>[];
+      lista?: Record<string, unknown>[];
+    }>(cred, "estoque/consulta/", "ListarPosEstoque", {
+      nPagina: pagina,
+      nRegPorPagina: 500,
+      dDataPosicao: opcoes.dataPosicao,
+    });
+    totalPaginas = resp.nTotPaginas ?? 1;
+    totalRegistros = resp.nTotRegistros ?? 0;
+    const lista = (resp.produtos ?? resp.posicaoEstoque ?? resp.lista ?? []) as Record<string, unknown>[];
+    if (!amostraEstoque && lista.length > 0) amostraEstoque = lista[0];
+
+    for (const e of lista) {
+      const saldo = num(pega(e, "fisico", "nSaldo", "saldo", "nFisico", "estoque"));
+      if (!opcoes.incluirZerados && Math.abs(saldo) < 0.0000001) continue;
+      const cmc = num(pega(e, "nCMC", "cmc", "nCustoMedio", "custo_medio", "nValorUnitario"));
+      const codProd = (pega(e, "nCodProd", "codigo_produto", "nIdProduto") ?? "").toString();
+      const codigo = (pega(e, "cCodigo", "codigo", "cCodInt") ?? "").toString();
+      const meta = prod.porCodProd.get(codProd) ?? prod.porCodigo.get(codigo);
+      const cmcTotal = num(pega(e, "nValorEstoque", "valor_estoque")) || saldo * cmc;
+      itens.push({
+        codigo: meta?.codigo || codigo || codProd,
+        descricao: meta?.descricao || (pega(e, "cDescricao", "descricao") ?? "").toString(),
+        ncm: meta?.ncm || "",
+        tipoSped: meta?.tipoSped || "",
+        familia: meta?.familia || "",
+        unidade: meta?.unidade || (pega(e, "cUnidade", "unidade") ?? "").toString(),
+        quantidade: saldo,
+        cmcUnitario: cmc,
+        cmcTotal: Math.round(cmcTotal * 100) / 100,
+      });
+    }
+    pagina++;
+    if (pagina <= totalPaginas && pagina <= maxPaginas) await sleep(150);
+  } while (pagina <= totalPaginas && pagina <= maxPaginas);
+
+  itens.sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true }));
+  return {
+    itens,
+    totalRegistros,
+    amostraEstoque: opcoes.debug ? amostraEstoque : undefined,
+    amostraProduto: opcoes.debug ? prod.amostra : undefined,
+  };
+}
