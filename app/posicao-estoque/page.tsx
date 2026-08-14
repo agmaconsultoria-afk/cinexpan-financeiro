@@ -196,7 +196,7 @@ export default function PosicaoEstoquePage() {
     <div>
       <PageHeader
         titulo="Posição de Estoque"
-        subtitulo="Saldo e custo médio (CMC) por produto na data — export para contabilidade"
+        subtitulo="Saldo e custo médio oficial do Omie (CMC) na data da posição — export para contabilidade"
         acoes={
           <div className="flex items-center gap-2">
             <SeletorMes value={competencia} onChange={(v) => { setCompetencia(v); setItens(null); }} />
@@ -300,6 +300,9 @@ export default function PosicaoEstoquePage() {
                 CMC Total: <strong className="tabular-nums">{formatarMoeda(totalCMC)}</strong>
               </span>
             </div>
+            <p className="mb-4 text-xs text-slate-400">
+              CMC = custo médio oficial do Omie na data da posição ({periodo}). Saldo negativo não entra no cálculo.
+            </p>
             <div className="card overflow-hidden">
               <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full min-w-[1000px] text-sm">
