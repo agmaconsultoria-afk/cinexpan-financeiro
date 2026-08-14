@@ -1611,9 +1611,9 @@ export async function diagnosticoEstoqueProdutos(
     //    ATUAL, ignorando a data histórica).
     for (const data of datas) {
       try {
-        const params: Record<string, unknown> = { dDataPosicao: data, cExibeTodos: "S" };
+        const params: Record<string, unknown> = { dDataPosicao: data };
         if (nCodProd) params.nIdProduto = Number(nCodProd);
-        else params.cCodIntProduto = codigo;
+        else params.cCodigo = codigo;
         const est = await callOmie<Record<string, unknown>>(cred, "estoque/consulta/", "PosicaoEstoque", params);
         estoquePorData[data] = est;
         cmcPorData[data] = num(pega(est as Record<string, unknown>, "nCMC", "cmc"));
