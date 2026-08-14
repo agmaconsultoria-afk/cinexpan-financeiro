@@ -1694,13 +1694,15 @@ export async function analiseVendaMes(
   const { itens, totalNFs, primeiroRegistroBruto } = await listarNotasFiscais(cred, { dataDe, dataAte });
 
   const porProduto: Record<string, VendaProdutoMes> = {};
+  const nfs = new Set<string>();
   let vendas = 0;
   let cmv = 0;
   for (const it of itens) {
     const venda = Number(it.totalMercadoria) || 0;
-    const custo = Number(it.custoItem) || 0;
+    const custo = Number(it.custoItem) || 0; // nCMCTotal — NÃO é o custo da linha (não usar p/ CMV)
     vendas += venda;
     cmv += custo;
+    if (it.nf) nfs.add(it.nf);
     const cod = (it.codigoProduto || "").toString().toUpperCase() || `__${it.produto}`;
     const p = (porProduto[cod] ??= { codigo: it.codigoProduto || "", descricao: it.produto, quantidade: 0, venda: 0, custo: 0 });
     p.quantidade += Number(it.quantidade) || 0;
@@ -1708,5 +1710,6 @@ export async function analiseVendaMes(
     p.custo += custo;
   }
 
-  return { competencia, vendas, cmv, totalNFs, porProduto, primeiroRegistroBruto };
+  // totalNFs = NFs de venda distintas do mês (não o total bruto do Omie).
+  return { competencia, vendas, cmv, totalNFs: nfs.size || totalNFs, porProduto, primeiroRegistroBruto };
 }
