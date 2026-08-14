@@ -156,6 +156,26 @@ export async function GET(req: NextRequest) {
       })
       .sort((a, b) => b.custoTotal - a.custoTotal)
       .slice(0, 24);
+    // Composição do estoque (custo) — só argila, cada item a custo de granel.
+    const composicaoEstoque = snapshot.itens
+      .filter((it) => ehArgila(it.descricao, it.familia))
+      .map((it) => {
+        const c = custoUnitGranel(it.descricao, it.unidade, it.familia, Number(it.cmcUnitario) || 0, modelo);
+        const saldo = Number(it.quantidade) || 0;
+        return {
+          codigo: it.codigo,
+          descricao: it.descricao,
+          tipoSped: it.tipoSped,
+          unidade: it.unidade,
+          saldo: round(saldo),
+          volumeM3: c.volumeM3,
+          custoUnitGranel: round(c.custoUnit),
+          custoTotal: round(saldo * c.custoUnit),
+          base: c.base,
+        };
+      })
+      .sort((a, b) => b.custoTotal - a.custoTotal);
+
     return NextResponse.json({
       ok: true,
       competencia,
@@ -163,6 +183,7 @@ export async function GET(req: NextRequest) {
       markupGlobal: r.cmv > 0 ? round(r.vendas / r.cmv) : null,
       granelPorTipo: Object.fromEntries([...modelo.granelPorTipo.entries()].map(([k, val]) => [k, round(val)])),
       granelGlobal: round(modelo.granelGlobal),
+      composicaoEstoque,
       amostraPorProduto: amostra,
     });
   } catch (e) {
