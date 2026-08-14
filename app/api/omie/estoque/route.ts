@@ -51,8 +51,16 @@ export async function GET(req: NextRequest) {
     // direto no Omie (rápido) em vez de varrer todo o catálogo/estoque (lento,
     // estava estourando o tempo da requisição no navegador).
     if (debugCodigos.length) {
-      const diag = await diagnosticoEstoqueProdutos(cred, { dataPosicao, codigos: debugCodigos });
-      return NextResponse.json({ ok: true, competencia, dataPosicao, periodo, debugCampos: diag });
+      // Compara o custo médio na data da competência com uma data recente,
+      // para checar se o Omie devolve o CMC histórico ou sempre o atual.
+      const hoje = new Date();
+      const dataHoje = `${p2(hoje.getUTCDate())}/${p2(hoje.getUTCMonth() + 1)}/${hoje.getUTCFullYear()}`;
+      const diag = await diagnosticoEstoqueProdutos(cred, {
+        dataPosicao,
+        codigos: debugCodigos,
+        datasComparar: [dataHoje],
+      });
+      return NextResponse.json({ ok: true, competencia, dataPosicao, dataComparacao: dataHoje, periodo, debugCampos: diag });
     }
 
     const res = await posicaoEstoque(cred, { dataPosicao, incluirZerados, debug, debugCodigos });

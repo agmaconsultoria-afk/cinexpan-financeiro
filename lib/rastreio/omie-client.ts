@@ -1582,18 +1582,20 @@ export async function posicaoEstoque(
  */
 export async function diagnosticoEstoqueProdutos(
   cred: OmieCredenciais,
-  opcoes: { dataPosicao: string; codigos: string[] }
+  opcoes: { dataPosicao: string; codigos: string[]; datasComparar?: string[] }
 ): Promise<
-  { codigo: string; nCodProd?: string; produto?: unknown; estoque?: unknown; erro?: string }[]
+  { codigo: string; nCodProd?: string; produto?: unknown; estoquePorData?: Record<string, unknown>; cmcPorData?: Record<string, number>; erro?: string }[]
 > {
-  const out: { codigo: string; nCodProd?: string; produto?: unknown; estoque?: unknown; erro?: string }[] = [];
+  const datas = [opcoes.dataPosicao, ...(opcoes.datasComparar ?? [])].filter((v, i, a) => v && a.indexOf(v) === i);
+  const out: { codigo: string; nCodProd?: string; produto?: unknown; estoquePorData?: Record<string, unknown>; cmcPorData?: Record<string, number>; erro?: string }[] = [];
   for (const codigoRaw of opcoes.codigos) {
     const codigo = codigoRaw.trim();
     if (!codigo) continue;
     let produto: unknown = null;
-    let estoque: unknown = null;
     let nCodProd = "";
     const erros: string[] = [];
+    const estoquePorData: Record<string, unknown> = {};
+    const cmcPorData: Record<string, number> = {};
 
     // 1) Cadastro do produto (traz nCodProd/nIdProduto e campos do cadastro).
     try {
@@ -1604,19 +1606,24 @@ export async function diagnosticoEstoqueProdutos(
       erros.push("produto: " + (e instanceof Error ? e.message : String(e)));
     }
 
-    // 2) Posição de estoque do produto na data (traz saldo, custo médio,
-    //    valor de estoque etc.). Tenta por nIdProduto; se não houver, por código.
-    try {
-      const params: Record<string, unknown> = { dDataPosicao: opcoes.dataPosicao, cExibeTodos: "S" };
-      if (nCodProd) params.nIdProduto = Number(nCodProd);
-      else params.cCodIntProduto = codigo;
-      estoque = await callOmie<Record<string, unknown>>(cred, "estoque/consulta/", "PosicaoEstoque", params);
-    } catch (e) {
-      erros.push("estoque: " + (e instanceof Error ? e.message : String(e)));
+    // 2) Posição de estoque do produto em CADA data (para comparar se o custo
+    //    médio nCMC muda conforme a data — ou se o Omie devolve sempre o custo
+    //    ATUAL, ignorando a data histórica).
+    for (const data of datas) {
+      try {
+        const params: Record<string, unknown> = { dDataPosicao: data, cExibeTodos: "S" };
+        if (nCodProd) params.nIdProduto = Number(nCodProd);
+        else params.cCodIntProduto = codigo;
+        const est = await callOmie<Record<string, unknown>>(cred, "estoque/consulta/", "PosicaoEstoque", params);
+        estoquePorData[data] = est;
+        cmcPorData[data] = num(pega(est as Record<string, unknown>, "nCMC", "cmc"));
+      } catch (e) {
+        erros.push(`estoque ${data}: ` + (e instanceof Error ? e.message : String(e)));
+      }
+      await sleep(250);
     }
 
-    out.push({ codigo, nCodProd, produto, estoque, erro: erros.length ? erros.join(" | ") : undefined });
-    await sleep(300);
+    out.push({ codigo, nCodProd, produto, estoquePorData, cmcPorData, erro: erros.length ? erros.join(" | ") : undefined });
   }
   return out;
 }
