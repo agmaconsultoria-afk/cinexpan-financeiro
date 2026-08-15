@@ -31,11 +31,13 @@ interface AnaliseMes {
 interface Linha {
   competencia: string;
   estoqueCusto: number; // acabado (04) a custo
-  estoqueEmProcesso: number | null; // em processo (03)
-  vendas: number | null; // estoque acabado valorizado a PREÇO DE VENDA (potencial)
+  estoqueEmProcesso: number | null; // em processo (03) a custo
+  vendas: number | null; // estoque acabado a PREÇO DE VENDA
+  emProcessoVenda: number | null; // em processo a PREÇO DE VENDA
+  vendasTotal: number | null; // Vendas + Em processo (venda)
   vendido: number; // tudo que foi faturado no mês
   cmv: number | null;
-  giro: number | null; // Vendas (a preço de venda) ÷ Vendido
+  giro: number | null; // Vendido ÷ (Vendas + Em processo venda)
   cobertura: number | null; // Qtde estoque ÷ Qtde vendida
   markup: number | null; // Vendido ÷ CMV
   processado: boolean;
@@ -99,21 +101,29 @@ export default function AnaliseEstoquePage() {
     return ordenadas.map((p) => {
       const a = mapA.get(p.competencia);
       const estoqueCusto = a ? a.estoqueCusto : p.totalCmc;
-      // Vendido = faturado no mês. Vendas = estoque acabado a preço de venda.
+      // Vendido = faturado no mês.
       const vendido = a ? a.vendas : (faturamento[p.competencia] || 0) + (vendasPF[p.competencia] || 0);
+      // Markup (Vendido ÷ CMV) — usado p/ valorar o em processo a preço de venda.
+      const markup = a && a.cmv > 0 ? a.vendas / a.cmv : null;
+      // Em processo a preço de venda = em processo (custo) × markup.
+      const emProcessoVenda = a && markup != null ? a.estoqueEmProcesso * markup : null;
+      // Vendas = estoque acabado a preço de venda + em processo a preço de venda.
+      const vendas = a ? a.estoquePrecoVenda : null;
+      const vendasTotal = a && emProcessoVenda != null ? a.estoquePrecoVenda + emProcessoVenda : null;
       return {
         competencia: p.competencia,
         estoqueCusto, // acabado a custo
         estoqueEmProcesso: a ? a.estoqueEmProcesso : null,
-        vendas: a ? a.estoquePrecoVenda : null, // estoque acabado a preço de venda
+        vendas,
+        emProcessoVenda,
+        vendasTotal,
         vendido,
         cmv: a ? a.cmv : null,
-        // Giro = Vendas (estoque a preço de venda) ÷ Vendido (faturado).
-        giro: a && vendido > 0 ? a.estoquePrecoVenda / vendido : null,
+        // Giro = Vendido ÷ (Vendas + Em processo venda).
+        giro: a && vendasTotal && vendasTotal > 0 ? vendido / vendasTotal : null,
         // Cobertura = Qtde em estoque (acabado) ÷ Qtde vendida (volume m³).
         cobertura: a && a.qtdeVendida > 0 ? a.qtdeEstoque / a.qtdeVendida : null,
-        // Markup = Vendido ÷ CMV.
-        markup: a && a.cmv > 0 ? a.vendas / a.cmv : null,
+        markup,
         processado: Boolean(a),
       };
     });
@@ -173,13 +183,14 @@ export default function AnaliseEstoquePage() {
 
           <div className="card overflow-hidden">
             <div className="overflow-auto">
-              <table className="w-full min-w-[1160px] text-sm">
+              <table className="w-full min-w-[1260px] text-sm">
                 <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-slate-500">
                     <th className="px-3 py-2.5 font-medium">Competência</th>
                     <th className="px-3 py-2.5 text-right font-medium">Estoque (custo)</th>
                     <th className="px-3 py-2.5 text-right font-medium">Em processo</th>
                     <th className="px-3 py-2.5 text-right font-medium" title="Estoque acabado valorizado a preço de venda">Vendas</th>
+                    <th className="px-3 py-2.5 text-right font-medium" title="Em processo valorizado a preço de venda">Em proc. (venda)</th>
                     <th className="px-3 py-2.5 text-right font-medium" title="Faturado no mês">Vendido</th>
                     <th className="px-3 py-2.5 text-right font-medium">CMV</th>
                     <th className="px-3 py-2.5 text-right font-medium">Giro</th>
@@ -195,6 +206,7 @@ export default function AnaliseEstoquePage() {
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{formatarMoeda(l.estoqueCusto)}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">{l.estoqueEmProcesso != null ? formatarMoeda(l.estoqueEmProcesso) : "—"}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.vendas != null ? formatarMoeda(l.vendas) : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">{l.emProcessoVenda != null ? formatarMoeda(l.emProcessoVenda) : "—"}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.vendido > 0 ? formatarMoeda(l.vendido) : "—"}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{l.cmv != null ? formatarMoeda(l.cmv) : "—"}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-semibold text-brand-700">{l.giro != null ? `${l.giro.toFixed(2)}` : "—"}</td>
@@ -222,15 +234,11 @@ export default function AnaliseEstoquePage() {
           </div>
 
           <div className="mt-4 space-y-1 text-xs text-slate-400">
-            <p><strong className="text-slate-500">Vendas</strong> = estoque de produto acabado valorizado a <strong className="text-slate-500">preço de venda</strong> (o que renderia se faturado). <strong className="text-slate-500">Vendido</strong> = tudo que foi faturado no mês.</p>
-            <p><strong className="text-slate-500">Giro</strong> = Vendas ÷ Vendido — quantos meses de faturamento o estoque (a preço de venda) representa.</p>
-            <p><strong className="text-slate-500">Cobertura</strong> = Qtde em estoque (acabado) ÷ Qtde vendida (em volume, m³) — meses de venda que o estoque cobre.</p>
+            <p><strong className="text-slate-500">Vendas</strong> = estoque de produto acabado a <strong className="text-slate-500">preço de venda</strong>. <strong className="text-slate-500">Em proc. (venda)</strong> = em processo a preço de venda (custo × markup). <strong className="text-slate-500">Vendido</strong> = faturado no mês.</p>
+            <p><strong className="text-slate-500">Giro</strong> = Vendido ÷ (Vendas + Em proc. venda) — quantas vezes o estoque (a preço de venda, incluindo o em processo) gira no mês.</p>
+            <p><strong className="text-slate-500">Cobertura</strong> = Qtde em estoque (acabado) ÷ Qtde vendida (em volume, m³).</p>
             <p><strong className="text-slate-500">Markup</strong> = Vendido ÷ CMV.</p>
-            <p>
-              Giro, Cobertura, Vendas e Markup consideram só o <strong className="text-slate-500">produto acabado (04)</strong>. O
-              <strong className="text-slate-500"> Em processo</strong> (argila a granel não classificada, WIP) é mostrado à parte, sem entrar no giro.
-              Clique em <strong className="text-slate-500">Processar</strong> para calcular o mês (busca as NFs no Omie).
-            </p>
+            <p>Argila custeada a granel por volume. Clique em <strong className="text-slate-500">Processar</strong> para calcular o mês (busca as NFs no Omie).</p>
           </div>
         </>
       )}
